@@ -12,6 +12,7 @@
 #![deny(unsafe_code)]
 
 use core::ops::{Add, Sub};
+use heapless::{consts::*, Vec};
 use nb;
 
 /// Currently contains [`OverlapIterator`]
@@ -66,8 +67,8 @@ pub trait Region {
 	fn contains(&self, address: Address) -> bool;
 }
 
-/// Storage trait
-pub trait ReadWrite {
+/// Transparent storage trait
+pub trait ReadWriteStorage {
 	/// An enumeration of storage errors
 	type Error;
 
@@ -86,8 +87,57 @@ pub trait ReadWrite {
 	fn range(&self) -> (Address, Address);
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
+	fn try_erase(&mut self, from: Address, to: Address) -> nb::Result<(), Self::Error>;
+}
+
+/// NOR flash region trait.
+pub trait NorFlashRegion {
+	/// The range of possible addresses within the region.
+	///
+	/// (start_addr, end_addr)
+	fn range(&self) -> (Address, Address);
+	/// Maximum number of bytes that can be written at once.
+	fn page_size(&self) -> usize;
+	/// List of avalable erase sizes in this region.
+	/// Should be sorted in ascending order.
+	/// Currently limited to 5 sizes, but could be increased if necessary.
+	fn erase_sizes(&self) -> Vec<usize, U5>;
+}
+
+/// NOR flash storage trait
+pub trait NorFlash {
+	/// An enumeration of storage errors
+	type Error;
+	/// Region type
+	type Region: NorFlashRegion;
+
+	/// Read a slice of data from the storage peripheral, starting the read
+	/// operation at the given address, and reading until end address
+	/// (`self.range().1`) or buffer length, whichever comes first.
+	fn try_read(&mut self, address: Address, bytes: &mut [u8]) -> nb::Result<(), Self::Error>;
+
+	/// Write a slice of data to the storage peripheral, starting the write
+	/// operation at the given address.
+	///
+	/// Since this is done on a NOR flash all bytes are anded with the current
+	/// content in the flash. This means no 0s can to turned into 1s this way.
+	fn try_write(&mut self, address: Address, bytes: &[u8]) -> nb::Result<(), Self::Error>;
+
+	/// Erase the given storage range, clearing all data within `[from..to]`.
+	/// The given range will contain all 1s afterwards.
 	///
 	/// This should return an error if the range is not aligned to a proper
 	/// erase resolution
 	fn try_erase(&mut self, from: Address, to: Address) -> nb::Result<(), Self::Error>;
+
+	/// The range of possible addresses within the peripheral.
+	///
+	/// (start_addr, end_addr)
+	fn range(&self) -> (Address, Address);
+
+	/// Get all distinct memory reagions. These must not overlap, but can be disjoint.
+	/// Most chips will return a single region, but some chips have regions with
+	/// different erase sizes.
+	/// Currently limited to 4 regions, but could be increased if necessary
+	fn regions(&self) -> Vec<Self::Region, U4>;
 }
