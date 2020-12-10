@@ -136,3 +136,23 @@ pub trait NorFlash {
 	/// Currently limited to 4 regions, but could be increased if necessary
 	fn regions(&self) -> Vec<Self::Region, U4>;
 }
+
+/// ...
+pub trait UniformNorFlash: NorFlash {
+	/// The range of possible addresses within the peripheral.
+	///
+	/// (start_addr, end_addr)
+	fn range(&self) -> (Address, Address) {
+		self.regions()[0].range()
+	}
+	/// Maximum number of bytes that can be written at once.
+	fn page_size(&self) -> usize {
+		self.regions()[0].page_size()
+	}
+	/// List of avalable erase sizes in this region.
+	/// Should be sorted in ascending order.
+	/// Currently limited to 5 sizes, but could be increased if necessary.
+	fn erase_sizes(&self) -> Vec<usize, U5> {
+		self.regions()[0].erase_sizes()
+	}
+}
