@@ -130,11 +130,6 @@ pub trait NorFlash {
 	/// erase resolution
 	fn try_erase(&mut self, from: Address, to: Address) -> nb::Result<(), Self::Error>;
 
-	/// The range of possible addresses within the peripheral.
-	///
-	/// (start_addr, end_addr)
-	fn range(&self) -> (Address, Address);
-
 	/// Get all distinct memory reagions. These must not overlap, but can be disjoint.
 	/// Most chips will return a single region, but some chips have regions with
 	/// different erase sizes.
