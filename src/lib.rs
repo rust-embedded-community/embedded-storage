@@ -137,8 +137,15 @@ pub trait NorFlash {
 	fn regions(&self) -> Vec<Self::Region, U4>;
 }
 
-/// ...
-pub trait UniformNorFlash: NorFlash {
+/// Marker trait for NOR flashes with uniform erase and page sizes across the whole
+/// address range
+pub trait UniformNorFlash {}
+
+/// Automatic implementation of region trait for uniform NOR flashes
+impl<T> NorFlashRegion for T
+where
+	T: NorFlash + UniformNorFlash,
+{
 	/// The range of possible addresses within the peripheral.
 	///
 	/// (start_addr, end_addr)
