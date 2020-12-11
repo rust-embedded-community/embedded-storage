@@ -13,6 +13,7 @@
 
 use core::ops::{Add, BitOr, Sub};
 use nb;
+pub mod storage;
 
 /// Trait to check if two entities are bitwise subset of another.
 pub trait BitSubset {
