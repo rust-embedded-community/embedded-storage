@@ -104,6 +104,14 @@ pub trait NorFlashRegion {
 	fn erase_sizes(&self) -> Vec<usize, U5>;
 }
 
+/// Blanket implementation for all types implementing [`NorFlashRegion`]
+impl<T: NorFlashRegion> Region for T {
+	fn contains(&self, address: Address) -> bool {
+		let (start, end) = self.range();
+		address.0 >= start.0 && address.0 < end.0
+	}
+}
+
 /// NOR flash storage trait
 pub trait NorFlash {
 	/// An enumeration of storage errors
@@ -141,11 +149,8 @@ pub trait NorFlash {
 /// address range
 pub trait UniformNorFlash {}
 
-/// Automatic implementation of region trait for uniform NOR flashes
-impl<T> NorFlashRegion for T
-where
-	T: NorFlash + UniformNorFlash,
-{
+/// Blanket implementation for all types implementing [`NorFlash`] and [`UniformNorFlash`]
+impl<T: NorFlash + UniformNorFlash> NorFlashRegion for T {
 	/// The range of possible addresses within the peripheral.
 	///
 	/// (start_addr, end_addr)
