@@ -15,5 +15,4 @@ keywords = ["storage"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
-nb = "1"
 heapless = "^0.5"

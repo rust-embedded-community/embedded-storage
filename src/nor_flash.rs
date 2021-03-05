@@ -1,9 +1,12 @@
-use crate::{iter::IterableByOverlaps, Region, Storage};
+use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
 
-/// NOR flash trait.
-pub trait NorFlash {
+/// Read only NOR flash trait.
+pub trait ReadNorFlash {
 	/// An enumeration of storage errors
 	type Error;
+
+	/// The minumum number of bytes the storage peripheral can read
+	const READ_SIZE: usize;
 
 	/// Read a slice of data from the storage peripheral, starting the read
 	/// operation at the given address, and reading `bytes.len()` bytes.
@@ -11,6 +14,18 @@ pub trait NorFlash {
 	///	This should throw an error in case `bytes.len()` will be larger than
 	/// the peripheral end address.
 	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+
+	/// The capacity of the peripheral in bytes.
+	fn capacity(&self) -> usize;
+}
+
+/// NOR flash trait.
+pub trait NorFlash: ReadNorFlash {
+	/// The minumum number of bytes the storage peripheral can write
+	const WRITE_SIZE: usize;
+
+	/// The minumum number of bytes the storage peripheral can erase
+	const ERASE_SIZE: usize;
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
 	/// The given range will contain all 1s afterwards.
@@ -28,15 +43,6 @@ pub trait NorFlash {
 	/// It is not allowed to write to the same word twice.
 	/// `address` and `bytes.len()` must both be multiples of `write_size()` and properly aligned.
 	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error>;
-
-	/// The erase granularity of the storage peripheral
-	fn erase_size(&self) -> u32;
-
-	/// The minumum write size of the storage peripheral
-	fn write_size(&self) -> u32;
-
-	/// The capacity of the peripheral in bytes.
-	fn capacity(&self) -> u32;
 }
 
 /// Marker trait for NorFlash relaxing the restrictions on `write`.
@@ -51,28 +57,15 @@ pub trait NorFlash {
 /// - Rest of the bits in the page are guaranteed to be unchanged
 pub trait MultiwriteNorFlash: NorFlash {}
 
-///
-pub struct RmwNorFlashStorage<S: NorFlash>(S);
-
-// FIXME: Not sure how to do this correctly? Ideally we could have `const fn erase_size()` or some const generic?
-const MAX_PAGE_SIZE: usize = 2048;
-
-impl<S: NorFlash> RmwNorFlashStorage<S> {
-	/// Instantiate a new generic `Storage` from a `NorFlash` peripheral
-	pub fn new(nor_flash: S) -> Self {
-		Self(nor_flash)
-	}
-}
-
 struct Page {
 	pub start: u32,
-	pub size: u32,
+	pub size: usize,
 }
 
 impl Page {
-	fn new(index: u32, size: u32) -> Self {
+	fn new(index: u32, size: usize) -> Self {
 		Self {
-			start: index * size,
+			start: index * size as u32,
 			size,
 		}
 	}
@@ -89,7 +82,20 @@ impl Region for Page {
 	}
 }
 
-impl<S: NorFlash> Storage for RmwNorFlashStorage<S> {
+///
+pub struct RmwNorFlashStorage<S>(S);
+
+impl<S> RmwNorFlashStorage<S> {
+	/// Instantiate a new generic `Storage` from a `NorFlash` peripheral
+	pub fn new(nor_flash: S) -> Self {
+		Self(nor_flash)
+	}
+}
+
+impl<S> ReadStorage for RmwNorFlashStorage<S>
+where
+	S: ReadNorFlash,
+{
 	type Error = S::Error;
 
 	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
@@ -97,18 +103,27 @@ impl<S: NorFlash> Storage for RmwNorFlashStorage<S> {
 		self.0.try_read(address, bytes)
 	}
 
+	fn capacity(&self) -> usize {
+		self.0.capacity()
+	}
+}
+
+impl<S> Storage for RmwNorFlashStorage<S>
+where
+	S: NorFlash,
+	// [u8; S::ERASE_SIZE]: Sized,
+{
 	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
-		let erase_size = self.0.erase_size();
-		let last_page = (self.0.capacity() / erase_size) - 1;
+		let last_page = (self.0.capacity() / S::ERASE_SIZE) - 1;
 
 		// `data` is the part of `bytes` contained within `page`,
 		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
-		for (data, page, addr) in (0..last_page)
-			.map(move |i| Page::new(i, erase_size))
+		for (data, page, addr) in (0..last_page as u32)
+			.map(move |i| Page::new(i, S::ERASE_SIZE))
 			.overlaps(bytes, address)
 		{
-			let merge_buffer = &mut [0u8; MAX_PAGE_SIZE][0..erase_size as usize];
+			let merge_buffer = &mut [0u8; 2048];
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
 			self.try_read(page.start, merge_buffer)?;
@@ -123,10 +138,6 @@ impl<S: NorFlash> Storage for RmwNorFlashStorage<S> {
 			self.0.try_write(page.start, merge_buffer)?;
 		}
 		Ok(())
-	}
-
-	fn capacity(&self) -> u32 {
-		self.0.capacity()
 	}
 }
 

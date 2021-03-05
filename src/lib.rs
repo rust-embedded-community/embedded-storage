@@ -18,8 +18,8 @@ pub trait Region {
 	fn contains(&self, address: u32) -> bool;
 }
 
-/// Transparent storage trait
-pub trait Storage {
+/// Transparent read only storage trait
+pub trait ReadStorage {
 	/// An enumeration of storage errors
 	type Error;
 
@@ -28,6 +28,12 @@ pub trait Storage {
 	/// (`self.range().1`) or buffer length, whichever comes first.
 	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
+	/// The capacity of the storage peripheral in bytes.
+	fn capacity(&self) -> usize;
+}
+
+/// Transparent read/write storage trait
+pub trait Storage: ReadStorage {
 	/// Write a slice of data to the storage peripheral, starting the write
 	/// operation at the given address.
 	///
@@ -38,7 +44,4 @@ pub trait Storage {
 	/// CONSIDERATIONS:
 	/// - Should the address here be normalized (always start from zero?)
 	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error>;
-
-	/// The capacity of the storage peripheral in bytes.
-	fn capacity(&self) -> u32;
 }
