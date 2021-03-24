@@ -162,6 +162,26 @@ pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	merge_buffer: &'a mut [u8],
 }
 
+impl<'a, S> RmwMultiwriteNorFlashStorage<'a, S>
+where
+	S: MultiwriteNorFlash,
+{
+	/// Instantiate a new generic `Storage` from a `NorFlash` peripheral
+	///
+	/// **NOTE** This will panic if the provided merge buffer,
+	/// is smaller than the erase size of the flash peripheral
+	pub fn new(nor_flash: S, merge_buffer: &'a mut [u8]) -> Self {
+		if merge_buffer.len() < S::ERASE_SIZE {
+			panic!("Merge buffer is too small");
+		}
+
+		Self {
+			storage: nor_flash,
+			merge_buffer,
+		}
+	}
+}
+
 impl<'a, S> ReadStorage for RmwMultiwriteNorFlashStorage<'a, S>
 where
 	S: ReadNorFlash,
@@ -180,7 +200,7 @@ where
 
 impl<'a, S> Storage for RmwMultiwriteNorFlashStorage<'a, S>
 where
-	S: NorFlash,
+	S: MultiwriteNorFlash,
 {
 	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
