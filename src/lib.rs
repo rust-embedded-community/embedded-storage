@@ -24,9 +24,11 @@ pub trait ReadStorage {
 	type Error;
 
 	/// Read a slice of data from the storage peripheral, starting the read
-	/// operation at the given address, and reading until end address
-	/// (`self.range().1`) or buffer length, whichever comes first.
-	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	/// operation at the given address offset, and reading `bytes.len()` bytes.
+	///
+	///	This should throw an error in case `bytes.len()` will be larger than
+	/// `self.capacity()`.
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the storage peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -35,13 +37,10 @@ pub trait ReadStorage {
 /// Transparent read/write storage trait
 pub trait Storage: ReadStorage {
 	/// Write a slice of data to the storage peripheral, starting the write
-	/// operation at the given address.
+	/// operation at the given address offset (between 0 and `self.capacity()`).
 	///
 	/// **NOTE:**
 	/// This function will automatically erase any pages necessary to write the given data,
 	/// and might as such do RMW operations at an undesirable performance impact.
-	///
-	/// CONSIDERATIONS:
-	/// - Should the address here be normalized (always start from zero?)
-	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error>;
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }

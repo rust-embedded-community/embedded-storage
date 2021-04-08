@@ -9,11 +9,11 @@ pub trait ReadNorFlash {
 	const READ_SIZE: usize;
 
 	/// Read a slice of data from the storage peripheral, starting the read
-	/// operation at the given address, and reading `bytes.len()` bytes.
+	/// operation at the given address offset, and reading `bytes.len()` bytes.
 	///
 	///	This should throw an error in case `bytes.len()` will be larger than
 	/// the peripheral end address.
-	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -41,8 +41,8 @@ pub trait NorFlash: ReadNorFlash {
 	/// If power is lost during write, the contents of the written words are undefined.
 	/// The rest of the page is guaranteed to be unchanged.
 	/// It is not allowed to write to the same word twice.
-	/// `address` and `bytes.len()` must both be multiples of `write_size()` and properly aligned.
-	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error>;
+	/// `offset` and `bytes.len()` must both be multiples of `write_size()` and properly aligned.
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
 /// Marker trait for NorFlash relaxing the restrictions on `write`.
@@ -115,9 +115,9 @@ where
 {
 	type Error = S::Error;
 
-	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
 		// Nothing special to be done for reads
-		self.storage.try_read(address, bytes)
+		self.storage.try_read(offset, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -129,7 +129,7 @@ impl<'a, S> Storage for RmwNorFlashStorage<'a, S>
 where
 	S: NorFlash,
 {
-	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
 		let last_page = (self.storage.capacity() / S::ERASE_SIZE) - 1;
 
@@ -137,7 +137,7 @@ where
 		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
 		for (data, page, addr) in (0..last_page as u32)
 			.map(move |i| Page::new(i, S::ERASE_SIZE))
-			.overlaps(bytes, address)
+			.overlaps(bytes, offset)
 		{
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
@@ -188,9 +188,9 @@ where
 {
 	type Error = S::Error;
 
-	fn try_read(&mut self, address: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
 		// Nothing special to be done for reads
-		self.storage.try_read(address, bytes)
+		self.storage.try_read(offset, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -202,7 +202,7 @@ impl<'a, S> Storage for RmwMultiwriteNorFlashStorage<'a, S>
 where
 	S: MultiwriteNorFlash,
 {
-	fn try_write(&mut self, address: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
 		let last_page = (self.storage.capacity() / S::ERASE_SIZE) - 1;
 
@@ -210,7 +210,7 @@ where
 		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
 		for (data, page, addr) in (0..last_page as u32)
 			.map(move |i| Page::new(i, S::ERASE_SIZE))
-			.overlaps(bytes, address)
+			.overlaps(bytes, offset)
 		{
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
