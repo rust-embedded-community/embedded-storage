@@ -11,7 +11,7 @@ pub trait ReadNorFlash {
 	/// Read a slice of data from the storage peripheral, starting the read
 	/// operation at the given address offset, and reading `bytes.len()` bytes.
 	///
-	///	This should throw an error in case `bytes.len()` will be larger than
+	/// This should throw an error in case `bytes.len()` will be larger than
 	/// the peripheral end address.
 	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
