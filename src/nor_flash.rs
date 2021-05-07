@@ -32,16 +32,14 @@ pub trait NorFlash: ReadNorFlash {
 	///
 	/// This should return an error if the range is not aligned to a proper
 	/// erase resolution
-	/// Erases page at addr, sets it all to 0xFF
 	/// If power is lost during erase, contents of the page are undefined.
-	/// `from` and `to` must both be multiples of `erase_size()` and `from` <= `to`.
+	/// `from` and `to` must both be multiples of `ERASE_SIZE` and `from` <= `to`.
 	fn try_erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error>;
 
-	/// Writes data to addr, bitwise ANDing if there's already data written at that location,
-	/// If power is lost during write, the contents of the written words are undefined.
-	/// The rest of the page is guaranteed to be unchanged.
+	/// If power is lost during write, the contents of the written words are undefined,
+	/// but the rest of the page is guaranteed to be unchanged.
 	/// It is not allowed to write to the same word twice.
-	/// `offset` and `bytes.len()` must both be multiples of `write_size()` and properly aligned.
+	/// `offset` and `bytes.len()` must both be multiples of `WRITE_SIZE`.
 	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
@@ -131,7 +129,7 @@ where
 {
 	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
-		let last_page = (self.storage.capacity() / S::ERASE_SIZE) - 1;
+		let last_page = self.storage.capacity() / S::ERASE_SIZE;
 
 		// `data` is the part of `bytes` contained within `page`,
 		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
@@ -141,16 +139,18 @@ where
 		{
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
-			self.storage.try_read(page.start, self.merge_buffer)?;
+			self.storage
+				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
 
 			// If we cannot write multiple times to the same page, we will have to erase it
 			self.storage.try_erase(page.start, page.end())?;
-			self.merge_buffer
+			self.merge_buffer[..S::ERASE_SIZE]
 				.iter_mut()
 				.skip(offset_into_page)
 				.zip(data)
 				.for_each(|(byte, input)| *byte = *input);
-			self.storage.try_write(page.start, self.merge_buffer)?;
+			self.storage
+				.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
 		}
 		Ok(())
 	}
@@ -204,7 +204,7 @@ where
 {
 	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
-		let last_page = (self.storage.capacity() / S::ERASE_SIZE) - 1;
+		let last_page = self.storage.capacity() / S::ERASE_SIZE;
 
 		// `data` is the part of `bytes` contained within `page`,
 		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
@@ -214,11 +214,11 @@ where
 		{
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
-			self.storage.try_read(page.start, self.merge_buffer)?;
+			self.storage
+				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
 
-			let rhs = &self.merge_buffer[offset_into_page..];
-			let is_subset =
-				data.len() < rhs.len() && data.iter().zip(rhs.iter()).all(|(a, b)| (*a | *b) == *b);
+			let rhs = &self.merge_buffer[offset_into_page..S::ERASE_SIZE];
+			let is_subset = data.iter().zip(rhs.iter()).all(|(a, b)| *a & *b == *a);
 
 			// Check if we can write the data block directly, under the limitations imposed by NorFlash:
 			// - We can only change 1's to 0's
@@ -226,12 +226,13 @@ where
 				self.storage.try_write(addr, data)?;
 			} else {
 				self.storage.try_erase(page.start, page.end())?;
-				self.merge_buffer
+				self.merge_buffer[..S::ERASE_SIZE]
 					.iter_mut()
 					.skip(offset_into_page)
 					.zip(data)
 					.for_each(|(byte, input)| *byte = *input);
-				self.storage.try_write(page.start, self.merge_buffer)?;
+				self.storage
+					.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
 			}
 		}
 		Ok(())
