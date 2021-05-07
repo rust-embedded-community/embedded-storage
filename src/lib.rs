@@ -27,7 +27,7 @@ pub trait ReadStorage {
 	/// operation at the given address offset, and reading `bytes.len()` bytes.
 	///
 	///	This should throw an error in case `bytes.len()` will be larger than
-	/// `self.capacity()`.
+	/// `self.capacity() - offset`.
 	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the storage peripheral in bytes.

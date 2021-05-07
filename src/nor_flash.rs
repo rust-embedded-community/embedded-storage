@@ -11,7 +11,7 @@ pub trait ReadNorFlash {
 	/// Read a slice of data from the storage peripheral, starting the read
 	/// operation at the given address offset, and reading `bytes.len()` bytes.
 	///
-	///	This should throw an error in case `bytes.len()` will be larger than
+	/// This should throw an error in case `bytes.len()` will be larger than
 	/// the peripheral end address.
 	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
@@ -223,7 +223,19 @@ where
 			// Check if we can write the data block directly, under the limitations imposed by NorFlash:
 			// - We can only change 1's to 0's
 			if is_subset {
-				self.storage.try_write(addr, data)?;
+				// Use `merge_buffer` as allocation for padding `data` to `WRITE_SIZE`
+				let offset = addr as usize % S::WRITE_SIZE;
+				self.merge_buffer[..S::WRITE_SIZE]
+					.iter_mut()
+					.for_each(|c| *c = 0u8);
+				self.merge_buffer[..S::WRITE_SIZE]
+					.iter_mut()
+					.skip(offset)
+					.zip(data)
+					.for_each(|(a, b)| *a = *b);
+				let aligned_addr = addr - offset as u32;
+				self.storage
+					.try_write(aligned_addr, &self.merge_buffer[..S::WRITE_SIZE])?;
 			} else {
 				self.storage.try_erase(page.start, page.end())?;
 				self.merge_buffer[..S::ERASE_SIZE]
