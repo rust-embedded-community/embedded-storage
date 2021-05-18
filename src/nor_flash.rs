@@ -225,11 +225,11 @@ where
 			if is_subset {
 				// Use `merge_buffer` as allocation for padding `data` to `WRITE_SIZE`
 				let offset = addr as usize % S::WRITE_SIZE;
-				let alligned_end = data.len() % S::WRITE_SIZE;
-				self.merge_buffer[..S::WRITE_SIZE].fill(0xff);
-				self.merge_buffer[offset..data.len()].copy_from_slice(data);
+				let aligned_end = data.len() % S::WRITE_SIZE + offset + data.len();
+				self.merge_buffer[..aligned_end].fill(0xff);
+				self.merge_buffer[offset..offset + data.len()].copy_from_slice(data);
 				self.storage
-					.try_write(addr - offset as u32, &self.merge_buffer[..S::WRITE_SIZE])?;
+					.try_write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
 			} else {
 				self.storage.try_erase(page.start, page.end())?;
 				self.merge_buffer[..S::ERASE_SIZE]
