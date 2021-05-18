@@ -3,6 +3,7 @@
 //! Storage traits to allow on and off board storage devices to read and write
 //! data.
 
+#![doc(html_root_url = "https://docs.rs/embedded-storage/0.1.0")]
 #![no_std]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
