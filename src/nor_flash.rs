@@ -11,7 +11,7 @@ pub trait ReadNorFlash {
 	///
 	/// This should throw an error in case `bytes.len()` will be larger than
 	/// the peripheral end address.
-	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -32,13 +32,13 @@ pub trait NorFlash: ReadNorFlash {
 	/// erase resolution
 	/// If power is lost during erase, contents of the page are undefined.
 	/// `from` and `to` must both be multiples of `ERASE_SIZE` and `from` <= `to`.
-	fn try_erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error>;
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error>;
 
 	/// If power is lost during write, the contents of the written words are undefined,
 	/// but the rest of the page is guaranteed to be unchanged.
 	/// It is not allowed to write to the same word twice.
 	/// `offset` and `bytes.len()` must both be multiples of `WRITE_SIZE`.
-	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
 /// Marker trait for NorFlash relaxing the restrictions on `write`.

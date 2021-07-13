@@ -29,7 +29,7 @@ pub trait ReadStorage {
 	///
 	/// This should throw an error in case `bytes.len()` will be larger than
 	/// `self.capacity() - offset`.
-	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the storage peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -43,5 +43,5 @@ pub trait Storage: ReadStorage {
 	/// **NOTE:**
 	/// This function will automatically erase any pages necessary to write the given data,
 	/// and might as such do RMW operations at an undesirable performance impact.
-	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
