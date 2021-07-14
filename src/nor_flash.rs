@@ -1,3 +1,5 @@
+use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
+
 /// Read only NOR flash trait.
 pub trait ReadNorFlash {
 	/// An enumeration of storage errors
@@ -52,3 +54,193 @@ pub trait NorFlash: ReadNorFlash {
 /// - Bits that were 0 on flash are guaranteed to stay as 0
 /// - Rest of the bits in the page are guaranteed to be unchanged
 pub trait MultiwriteNorFlash: NorFlash {}
+
+struct Page {
+	pub start: u32,
+	pub size: usize,
+}
+
+impl Page {
+	fn new(index: u32, size: usize) -> Self {
+		Self {
+			start: index * size as u32,
+			size,
+		}
+	}
+
+	/// The end address of the page
+	const fn end(&self) -> u32 {
+		self.start + self.size as u32
+	}
+}
+
+impl Region for Page {
+	/// Checks if an address offset is contained within the page
+	fn contains(&self, address: u32) -> bool {
+		(self.start <= address) && (self.end() > address)
+	}
+}
+
+///
+pub struct RmwNorFlashStorage<'a, S> {
+	storage: S,
+	merge_buffer: &'a mut [u8],
+}
+
+impl<'a, S> RmwNorFlashStorage<'a, S>
+where
+	S: NorFlash,
+{
+	/// Instantiate a new generic `Storage` from a `NorFlash` peripheral
+	///
+	/// **NOTE** This will panic if the provided merge buffer,
+	/// is smaller than the erase size of the flash peripheral
+	pub fn new(nor_flash: S, merge_buffer: &'a mut [u8]) -> Self {
+		if merge_buffer.len() < S::ERASE_SIZE {
+			panic!("Merge buffer is too small");
+		}
+
+		Self {
+			storage: nor_flash,
+			merge_buffer,
+		}
+	}
+}
+
+impl<'a, S> ReadStorage for RmwNorFlashStorage<'a, S>
+where
+	S: ReadNorFlash,
+{
+	type Error = S::Error;
+
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		// Nothing special to be done for reads
+		self.storage.try_read(offset, bytes)
+	}
+
+	fn capacity(&self) -> usize {
+		self.storage.capacity()
+	}
+}
+
+impl<'a, S> Storage for RmwNorFlashStorage<'a, S>
+where
+	S: NorFlash,
+{
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+		// Perform read/modify/write operations on the byte slice.
+		let last_page = self.storage.capacity() / S::ERASE_SIZE;
+
+		// `data` is the part of `bytes` contained within `page`,
+		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
+		for (data, page, addr) in (0..last_page as u32)
+			.map(move |i| Page::new(i, S::ERASE_SIZE))
+			.overlaps(bytes, offset)
+		{
+			let offset_into_page = addr.saturating_sub(page.start) as usize;
+
+			self.storage
+				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
+
+			// If we cannot write multiple times to the same page, we will have to erase it
+			self.storage.try_erase(page.start, page.end())?;
+			self.merge_buffer[..S::ERASE_SIZE]
+				.iter_mut()
+				.skip(offset_into_page)
+				.zip(data)
+				.for_each(|(byte, input)| *byte = *input);
+			self.storage
+				.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+		}
+		Ok(())
+	}
+}
+
+///
+pub struct RmwMultiwriteNorFlashStorage<'a, S> {
+	storage: S,
+	merge_buffer: &'a mut [u8],
+}
+
+impl<'a, S> RmwMultiwriteNorFlashStorage<'a, S>
+where
+	S: MultiwriteNorFlash,
+{
+	/// Instantiate a new generic `Storage` from a `NorFlash` peripheral
+	///
+	/// **NOTE** This will panic if the provided merge buffer,
+	/// is smaller than the erase size of the flash peripheral
+	pub fn new(nor_flash: S, merge_buffer: &'a mut [u8]) -> Self {
+		if merge_buffer.len() < S::ERASE_SIZE {
+			panic!("Merge buffer is too small");
+		}
+
+		Self {
+			storage: nor_flash,
+			merge_buffer,
+		}
+	}
+}
+
+impl<'a, S> ReadStorage for RmwMultiwriteNorFlashStorage<'a, S>
+where
+	S: ReadNorFlash,
+{
+	type Error = S::Error;
+
+	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		// Nothing special to be done for reads
+		self.storage.try_read(offset, bytes)
+	}
+
+	fn capacity(&self) -> usize {
+		self.storage.capacity()
+	}
+}
+
+impl<'a, S> Storage for RmwMultiwriteNorFlashStorage<'a, S>
+where
+	S: MultiwriteNorFlash,
+{
+	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+		// Perform read/modify/write operations on the byte slice.
+		let last_page = self.storage.capacity() / S::ERASE_SIZE;
+
+		// `data` is the part of `bytes` contained within `page`,
+		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
+		for (data, page, addr) in (0..last_page as u32)
+			.map(move |i| Page::new(i, S::ERASE_SIZE))
+			.overlaps(bytes, offset)
+		{
+			let offset_into_page = addr.saturating_sub(page.start) as usize;
+
+			self.storage
+				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
+
+			let rhs = &self.merge_buffer[offset_into_page..S::ERASE_SIZE];
+			let is_subset = data.iter().zip(rhs.iter()).all(|(a, b)| *a & *b == *a);
+
+			// Check if we can write the data block directly, under the limitations imposed by NorFlash:
+			// - We can only change 1's to 0's
+			if is_subset {
+				// Use `merge_buffer` as allocation for padding `data` to `WRITE_SIZE`
+				let offset = addr as usize % S::WRITE_SIZE;
+				let aligned_end = data.len() % S::WRITE_SIZE + offset + data.len();
+				self.merge_buffer[..aligned_end].fill(0xff);
+				self.merge_buffer[offset..offset + data.len()].copy_from_slice(data);
+				self.storage
+					.try_write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
+			} else {
+				self.storage.try_erase(page.start, page.end())?;
+				self.merge_buffer[..S::ERASE_SIZE]
+					.iter_mut()
+					.skip(offset_into_page)
+					.zip(data)
+					.for_each(|(byte, input)| *byte = *input);
+				self.storage
+					.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+			}
+		}
+		Ok(())
+	}
+}

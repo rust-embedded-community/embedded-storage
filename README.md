@@ -8,8 +8,6 @@ NOR-flash & NAND-flash, both external and internal.
 
 ## [API reference]
 
-[API reference]: https://docs.rs/embedded-storage
-
 ## How-to: add a new trait
 
 This is the suggested approach to adding a new trait to `embedded-storage`
@@ -37,7 +35,7 @@ These issues / PRs will be labeled as `proposal`s in the issue tracker.
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate is guaranteed to compile on stable Rust 1.36.0 and up. It *might*
+This crate is guaranteed to compile on stable Rust 1.50.0 and up. It *might*
 compile with older versions but that may change in any new patch release.
 
 ## License
@@ -55,3 +53,5 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
+
+[API reference]: https://docs.rs/embedded-storage
