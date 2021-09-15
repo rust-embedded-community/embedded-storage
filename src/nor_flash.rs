@@ -113,9 +113,9 @@ where
 {
 	type Error = S::Error;
 
-	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
 		// Nothing special to be done for reads
-		self.storage.try_read(offset, bytes)
+		self.storage.read(offset, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -127,7 +127,7 @@ impl<'a, S> Storage for RmwNorFlashStorage<'a, S>
 where
 	S: NorFlash,
 {
-	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
 		let last_page = self.storage.capacity() / S::ERASE_SIZE;
 
@@ -140,17 +140,17 @@ where
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
 			self.storage
-				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
+				.read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
 
 			// If we cannot write multiple times to the same page, we will have to erase it
-			self.storage.try_erase(page.start, page.end())?;
+			self.storage.erase(page.start, page.end())?;
 			self.merge_buffer[..S::ERASE_SIZE]
 				.iter_mut()
 				.skip(offset_into_page)
 				.zip(data)
 				.for_each(|(byte, input)| *byte = *input);
 			self.storage
-				.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+				.write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
 		}
 		Ok(())
 	}
@@ -188,9 +188,9 @@ where
 {
 	type Error = S::Error;
 
-	fn try_read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
 		// Nothing special to be done for reads
-		self.storage.try_read(offset, bytes)
+		self.storage.read(offset, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -202,7 +202,7 @@ impl<'a, S> Storage for RmwMultiwriteNorFlashStorage<'a, S>
 where
 	S: MultiwriteNorFlash,
 {
-	fn try_write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		// Perform read/modify/write operations on the byte slice.
 		let last_page = self.storage.capacity() / S::ERASE_SIZE;
 
@@ -215,7 +215,7 @@ where
 			let offset_into_page = addr.saturating_sub(page.start) as usize;
 
 			self.storage
-				.try_read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
+				.read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
 
 			let rhs = &self.merge_buffer[offset_into_page..S::ERASE_SIZE];
 			let is_subset = data.iter().zip(rhs.iter()).all(|(a, b)| *a & *b == *a);
@@ -229,16 +229,16 @@ where
 				self.merge_buffer[..aligned_end].fill(0xff);
 				self.merge_buffer[offset..offset + data.len()].copy_from_slice(data);
 				self.storage
-					.try_write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
+					.write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
 			} else {
-				self.storage.try_erase(page.start, page.end())?;
+				self.storage.erase(page.start, page.end())?;
 				self.merge_buffer[..S::ERASE_SIZE]
 					.iter_mut()
 					.skip(offset_into_page)
 					.zip(data)
 					.for_each(|(byte, input)| *byte = *input);
 				self.storage
-					.try_write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+					.write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
 			}
 		}
 		Ok(())

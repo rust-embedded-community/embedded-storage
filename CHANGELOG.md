@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.2.0] - 2021-09-15
+
 - Removed `try_` prefix from all trait methods.
+- Add RMW helpers for Nor flashes, implementing `Storage` trait.
 
 ## [0.1.0] - 2021-05-18
 
 Initial release to crates.io.
 
-[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.1.0
