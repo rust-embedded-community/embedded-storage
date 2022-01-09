@@ -19,6 +19,16 @@ pub trait ReadNorFlash {
 	fn capacity(&self) -> usize;
 }
 
+/// Read only NOR flash trait with direct access.
+pub trait DirectreadNorFlash: ReadNorFlash {
+	/// Provides direct access to the storage peripheral, starting at the given address offset
+	/// with the given byte length.
+	///
+	/// This should throw an error if the arguments are out of bounds. Note that there is no
+	/// alignment restriction (i.e. [`ReadNorFlash::READ_SIZE`] should be 1).
+	fn direct_read(&self, offset: u32, length: usize) -> Result<&[u8], Self::Error>;
+}
+
 /// NOR flash trait.
 pub trait NorFlash: ReadNorFlash {
 	/// The minumum number of bytes the storage peripheral can write

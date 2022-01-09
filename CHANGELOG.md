@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+- Add `DirectreadNorFlash` trait
+
 ## [0.2.0] - 2021-09-15
 
 - Removed `try_` prefix from all trait methods.
