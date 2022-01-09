@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+- Require Nor flashes error types to be convertible to generic errors.
+- Provide helper functions for Nor flashes to check for generic errors.
+
 ## [0.2.0] - 2021-09-15
 
 - Removed `try_` prefix from all trait methods.
