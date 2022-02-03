@@ -1,0 +1,18 @@
+[package]
+name = "embedded-storage-async"
+version = "0.2.0"
+authors = [
+    "Mathias Koch <mk@blackbird.online>",
+]
+edition = "2018"
+description = "A Storage Abstraction Layer for Embedded Systems"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rust-embedded-community/embedded-storage"
+homepage = "https://github.com/rust-embedded-community/embedded-storage"
+documentation = "https://docs.rs/embedded-storage"
+readme = "README.md"
+keywords = ["storage"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[dependencies]
+embedded-storage = { path = "../" }

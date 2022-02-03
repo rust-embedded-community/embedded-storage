@@ -15,6 +15,12 @@ impl NorFlashError for core::convert::Infallible {
 	}
 }
 
+/// A trait that NorFlash implementations can use to share an error type.
+pub trait ErrorType {
+	/// Errors returned by this NOR flash.
+	type Error: NorFlashError;
+}
+
 /// NOR flash error kinds.
 ///
 /// NOR flash implementations must map their error to those generic error kinds through the
@@ -49,10 +55,7 @@ impl core::fmt::Display for NorFlashErrorKind {
 }
 
 /// Read only NOR flash trait.
-pub trait ReadNorFlash {
-	/// Errors returned by this NOR flash.
-	type Error: NorFlashError;
-
+pub trait ReadNorFlash: ErrorType {
 	/// The minumum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
 
