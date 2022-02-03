@@ -1,11 +1,8 @@
 use core::future::Future;
-use embedded_storage::nor_flash::NorFlashError;
+use embedded_storage::nor_flash::ErrorType;
 
 /// Read only NOR flash trait.
-pub trait AsyncReadNorFlash {
-	/// Errors returned by this NOR flash.
-	type Error: NorFlashError;
-
+pub trait AsyncReadNorFlash: ErrorType {
 	/// The minumum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
 
