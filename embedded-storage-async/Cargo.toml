@@ -15,4 +15,4 @@ keywords = ["storage"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
-embedded-storage = { path = "../" }
+embedded-storage = { version = "0.3.0", path = "../" }
