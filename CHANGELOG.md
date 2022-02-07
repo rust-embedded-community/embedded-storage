@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.0] - 2022-02-07
+
 - Require Nor flashes error types to be convertible to generic errors.
 - Provide helper functions for Nor flashes to check for generic errors.
+- Add embedded-storage-async crate with async version of nor flash (requires nightly).
+- Add `ErrorType` trait to avoid needing to specify error type multiple times.
 
 ## [0.2.0] - 2021-09-15
 
