@@ -1,7 +1,7 @@
 use embedded_storage::nor_flash::ErrorType;
 
 /// Read only NOR flash trait.
-pub trait AsyncReadNorFlash: ErrorType {
+pub trait ReadNorFlash: ErrorType {
 	/// The minumum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
 
@@ -19,7 +19,7 @@ pub trait AsyncReadNorFlash: ErrorType {
 }
 
 /// NOR flash trait.
-pub trait AsyncNorFlash: AsyncReadNorFlash {
+pub trait NorFlash: ReadNorFlash {
 	/// The minumum number of bytes the storage peripheral can write
 	const WRITE_SIZE: usize;
 
