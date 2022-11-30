@@ -4,6 +4,7 @@
 //! data asynchronously.
 
 #![no_std]
-#![feature(generic_associated_types)]
+#![feature(async_fn_in_trait)]
+#![allow(incomplete_features)]
 
 pub mod nor_flash;
