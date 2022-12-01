@@ -3,6 +3,9 @@ name = "embedded-storage-async"
 version = "0.4.0"
 authors = [
     "Mathias Koch <mk@blackbird.online>",
+    "Ulf Lilleengen <lulf@redhat.com>",
+    "Dario Nieuwenhuis <dirbaio@dirbaio.net>",
+    "Diego Barrios Romero <eldruin@gmail.com>",
 ]
 edition = "2018"
 description = "A Storage Abstraction Layer for Embedded Systems"
