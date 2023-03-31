@@ -149,6 +149,35 @@ fn check_slice<T: ReadNorFlash>(
 	Ok(())
 }
 
+impl<T: ErrorType> ErrorType for &mut T {
+	type Error = T::Error;
+}
+
+impl<T: ReadNorFlash> ReadNorFlash for &mut T {
+	const READ_SIZE: usize = T::READ_SIZE;
+
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		T::read(self, offset, bytes)
+	}
+
+	fn capacity(&self) -> usize {
+		T::capacity(self)
+	}
+}
+
+impl<T: NorFlash> NorFlash for &mut T {
+	const WRITE_SIZE: usize = T::WRITE_SIZE;
+	const ERASE_SIZE: usize = T::ERASE_SIZE;
+
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+		T::erase(self, from, to)
+	}
+
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+		T::write(self, offset, bytes)
+	}
+}
+
 /// Marker trait for NorFlash relaxing the restrictions on `write`.
 ///
 /// Writes to the same word twice are now allowed. The result is the logical AND of the
