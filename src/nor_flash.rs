@@ -34,6 +34,9 @@ pub enum NorFlashErrorKind {
 	/// The arguments are out of bounds.
 	OutOfBounds,
 
+	/// The cell already was written or cannot be written properly with provided value
+	DirtyWrite,
+
 	/// Error specific to the implementation.
 	Other,
 }
@@ -49,6 +52,7 @@ impl core::fmt::Display for NorFlashErrorKind {
 		match self {
 			Self::NotAligned => write!(f, "Arguments are not properly aligned"),
 			Self::OutOfBounds => write!(f, "Arguments are out of bounds"),
+			Self::DirtyWrite => write!(f, "Dirty write operation"),
 			Self::Other => write!(f, "An implementation specific error occurred"),
 		}
 	}
@@ -382,6 +386,135 @@ where
 					.write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
 			}
 		}
+		Ok(())
+	}
+}
+
+/// Simple RAM-backed flash storage implementation for tests
+#[derive(Clone, Copy, Debug)]
+pub struct MockFlash<
+	const CAPACITY: usize,
+	const READ_SIZE: usize = 1,
+	const WRITE_SIZE: usize = 1,
+	const ERASE_SIZE: usize = { 1 << 10 },
+	const ERASE_BYTE: u8 = 0xff,
+	const MULTI_WRITE: bool = false,
+> {
+	data: [u8; CAPACITY],
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> Default for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	fn default() -> Self {
+		Self {
+			data: [ERASE_BYTE; CAPACITY],
+		}
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> core::ops::Deref
+	for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	type Target = [u8; CAPACITY];
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> core::ops::DerefMut
+	for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.data
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> ErrorType for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	type Error = NorFlashErrorKind;
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> ReadNorFlash for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	const READ_SIZE: usize = READ_SIZE;
+
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		check_read(self, offset, bytes.len())?;
+		bytes.copy_from_slice(&self.data[offset as usize..][..bytes.len()]);
+		Ok(())
+	}
+
+	fn capacity(&self) -> usize {
+		CAPACITY
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> NorFlash for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	const WRITE_SIZE: usize = WRITE_SIZE;
+	const ERASE_SIZE: usize = ERASE_SIZE;
+	const ERASE_BYTE: u8 = ERASE_BYTE;
+
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+		check_write(self, offset, bytes.len())?;
+		for (dst, src) in self.data[offset as usize..].iter_mut().zip(bytes) {
+			if !MULTI_WRITE && *dst != ERASE_BYTE {
+				return Err(NorFlashErrorKind::DirtyWrite);
+			}
+			*dst &= *src;
+			if *src != *dst {
+				return Err(NorFlashErrorKind::DirtyWrite);
+			}
+		}
+		Ok(())
+	}
+
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+		check_erase(self, from, to)?;
+		self.data[from as usize..to as usize].fill(ERASE_BYTE);
 		Ok(())
 	}
 }
