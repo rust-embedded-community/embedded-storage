@@ -616,3 +616,211 @@ impl<
 		Ok(())
 	}
 }
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	const TEST_SIZE: usize = 64;
+	const TEST_WORD: usize = 4;
+	const TEST_PAGE: usize = 16;
+	type TestFlash = MockFlash<TEST_SIZE, TEST_WORD, TEST_WORD, TEST_PAGE>;
+
+	const fn gen_test_data<const N: usize>() -> [u8; N] {
+		let mut data = [0u8; N];
+		let mut i = 0;
+
+		while i < N {
+			data[i] = i as u8;
+			i += 1;
+		}
+
+		data
+	}
+
+	const TEST_DATA: [u8; 64] = gen_test_data();
+
+	fn gen_ranges(aligned: Option<bool>) -> impl Iterator<Item = (usize, usize)> {
+		(0..TEST_SIZE).flat_map(move |off| {
+			(0..=TEST_SIZE - off)
+				.filter(move |len| {
+					aligned
+						.map(|aligned| aligned == (off % TEST_WORD == 0 && len % TEST_WORD == 0))
+						.unwrap_or(true)
+				})
+				.map(move |len| (off, len))
+		})
+	}
+
+	#[test]
+	fn aligned_test_ranges() {
+		let mut ranges = gen_ranges(true.into());
+
+		assert_eq!(ranges.next(), Some((0, 0)));
+		assert_eq!(ranges.next(), Some((0, 4)));
+		assert_eq!(ranges.next(), Some((0, 8)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((0, 64)));
+		assert_eq!(ranges.next(), Some((4, 0)));
+		assert_eq!(ranges.next(), Some((4, 4)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((4, 60)));
+		assert_eq!(ranges.next(), Some((8, 0)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((8, 56)));
+		assert_eq!(ranges.next(), Some((12, 0)));
+		for _ in 0..12 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((12, 52)));
+		assert_eq!(ranges.next(), Some((16, 0)));
+		for _ in 0..11 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((16, 48)));
+		assert_eq!(ranges.next(), Some((20, 0)));
+	}
+
+	#[test]
+	fn not_aligned_test_ranges() {
+		let mut ranges = gen_ranges(false.into());
+
+		assert_eq!(ranges.next(), Some((0, 1)));
+		assert_eq!(ranges.next(), Some((0, 2)));
+		assert_eq!(ranges.next(), Some((0, 3)));
+		assert_eq!(ranges.next(), Some((0, 5)));
+		for _ in 0..43 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((0, 63)));
+		assert_eq!(ranges.next(), Some((1, 0)));
+	}
+
+	#[test]
+	fn aligned_read_raw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_read_raw() {
+		let mut flash = TestFlash::default();
+		let mut buffer = [0; TEST_SIZE];
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(
+				flash.read(off as u32, &mut buffer[..len]),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn aligned_read_rmw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		let mut flash_buffer = [0; TEST_PAGE];
+		let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_read_rmw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		let mut flash_buffer = [0; TEST_PAGE];
+		let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn aligned_write_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.erase(0, TEST_SIZE as u32), Ok(()));
+			assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_write_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(
+				flash.write(off as u32, &TEST_DATA[..len]),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn not_aligned_erase_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in [
+			(1usize, TEST_PAGE),
+			(0, TEST_PAGE - 1),
+			(TEST_PAGE, TEST_PAGE + 1),
+		] {
+			assert_eq!(
+				flash.erase(off as u32, (off + len) as u32),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn aligned_write_rmw() {
+		let mut flash = TestFlash::default();
+		let mut flash_buffer = [0u8; TEST_PAGE];
+
+		for (off, len) in gen_ranges(true.into()) {
+			{
+				let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+				assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			}
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_write_rmw() {
+		let mut flash = TestFlash::default();
+		let mut flash_buffer = [0u8; TEST_PAGE];
+
+		for (off, len) in gen_ranges(false.into()) {
+			{
+				let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+				assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			}
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
+	}
+}
