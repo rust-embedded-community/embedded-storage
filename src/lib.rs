@@ -8,16 +8,8 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
-/// Currently contains [`OverlapIterator`]
-pub mod iter;
 /// Technology specific traits for NOR Flashes
 pub mod nor_flash;
-
-/// A region denotes a contiguous piece of memory between two addresses.
-pub trait Region {
-	/// Check if `address` is contained in the region of `Self`
-	fn contains(&self, address: u32) -> bool;
-}
 
 /// Transparent read only storage trait
 pub trait ReadStorage {
