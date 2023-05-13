@@ -390,6 +390,104 @@ where
 	}
 }
 
+/// A wrapper for NOR flash storage to collect usage statistics
+#[derive(Clone, Copy, Debug)]
+pub struct NorFlashStats<S> {
+	storage: S,
+	/// Number of read operations
+	pub reads: usize,
+	/// Amount read chunks
+	pub read: usize,
+	/// Number of write operations
+	pub writes: usize,
+	/// Amount written chunks
+	pub written: usize,
+	/// Number of erase operations
+	pub erases: usize,
+	/// Amount of erased sectors
+	pub erased: usize,
+}
+
+impl<S> From<S> for NorFlashStats<S> {
+	fn from(storage: S) -> Self {
+		Self {
+			storage,
+			reads: 0,
+			read: 0,
+			writes: 0,
+			written: 0,
+			erases: 0,
+			erased: 0,
+		}
+	}
+}
+
+impl<S> NorFlashStats<S> {
+	/// Unwrap to get wrapped storage instance
+	pub fn into_inner(self) -> S {
+		self.storage
+	}
+}
+
+impl<S> core::ops::Deref for NorFlashStats<S> {
+	type Target = S;
+
+	fn deref(&self) -> &Self::Target {
+		&self.storage
+	}
+}
+
+impl<S> core::ops::DerefMut for NorFlashStats<S> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.storage
+	}
+}
+
+impl<S: ErrorType> ErrorType for NorFlashStats<S> {
+	type Error = S::Error;
+}
+
+impl<S: ReadNorFlash> ReadNorFlash for NorFlashStats<S> {
+	const READ_SIZE: usize = S::READ_SIZE;
+
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), S::Error> {
+		let res = self.storage.read(offset, bytes);
+		if res.is_ok() {
+			self.reads += 1;
+			self.read += bytes.len() / S::READ_SIZE;
+		}
+		res
+	}
+
+	fn capacity(&self) -> usize {
+		self.storage.capacity()
+	}
+}
+
+impl<S: NorFlash> NorFlash for NorFlashStats<S> {
+	const WRITE_SIZE: usize = S::WRITE_SIZE;
+	const ERASE_SIZE: usize = S::ERASE_SIZE;
+	const ERASE_BYTE: u8 = S::ERASE_BYTE;
+
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), S::Error> {
+		let res = self.storage.write(offset, bytes);
+		if res.is_ok() {
+			self.writes += 1;
+			self.written += bytes.len() / S::WRITE_SIZE;
+		}
+		res
+	}
+
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), S::Error> {
+		let res = self.storage.erase(from, to);
+		if res.is_ok() {
+			self.erases += 1;
+			self.erased += (to - from) as usize / S::ERASE_SIZE;
+		}
+		res
+	}
+}
+
 /// Simple RAM-backed flash storage implementation for tests
 #[derive(Clone, Copy, Debug)]
 pub struct MockFlash<
