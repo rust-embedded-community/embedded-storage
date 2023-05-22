@@ -49,10 +49,6 @@ pub trait NorFlash: ReadNorFlash {
 	async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
-impl<T: ErrorType> ErrorType for &mut T {
-	type Error = T::Error;
-}
-
 impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 	const READ_SIZE: usize = T::READ_SIZE;
 
