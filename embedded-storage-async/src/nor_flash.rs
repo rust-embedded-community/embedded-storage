@@ -52,11 +52,7 @@ pub trait NorFlash: ReadNorFlash {
 impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 	const READ_SIZE: usize = T::READ_SIZE;
 
-	async fn read(
-		&mut self,
-		offset: u32,
-		bytes: &mut [u8],
-	) -> Result<(), <&mut T as ErrorType>::Error> {
+	async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
 		T::read(self, offset, bytes).await
 	}
 
@@ -69,15 +65,11 @@ impl<T: NorFlash> NorFlash for &mut T {
 	const WRITE_SIZE: usize = T::WRITE_SIZE;
 	const ERASE_SIZE: usize = T::ERASE_SIZE;
 
-	async fn erase(&mut self, from: u32, to: u32) -> Result<(), <&mut T as ErrorType>::Error> {
+	async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
 		T::erase(self, from, to).await
 	}
 
-	async fn write(
-		&mut self,
-		offset: u32,
-		bytes: &[u8],
-	) -> Result<(), <&mut T as ErrorType>::Error> {
+	async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
 		T::write(self, offset, bytes).await
 	}
 }
