@@ -89,6 +89,11 @@ pub trait NorFlash: ReadNorFlash {
 	/// The minumum number of bytes the storage peripheral can erase
 	const ERASE_SIZE: usize;
 
+	/// The content of erased storage
+	///
+	/// Usually is `0xff` for NOR flash
+	const ERASE_BYTE: u8 = 0xff;
+
 	/// Erase the given storage range, clearing all data within `[from..to]`.
 	/// The given range will contain all 1s afterwards.
 	///
@@ -168,6 +173,7 @@ impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 impl<T: NorFlash> NorFlash for &mut T {
 	const WRITE_SIZE: usize = T::WRITE_SIZE;
 	const ERASE_SIZE: usize = T::ERASE_SIZE;
+	const ERASE_BYTE: u8 = T::ERASE_BYTE;
 
 	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
 		T::erase(self, from, to)
@@ -361,7 +367,7 @@ where
 				// Use `merge_buffer` as allocation for padding `data` to `WRITE_SIZE`
 				let offset = addr as usize % S::WRITE_SIZE;
 				let aligned_end = data.len() % S::WRITE_SIZE + offset + data.len();
-				self.merge_buffer[..aligned_end].fill(0xff);
+				self.merge_buffer[..aligned_end].fill(S::ERASE_BYTE);
 				self.merge_buffer[offset..offset + data.len()].copy_from_slice(data);
 				self.storage
 					.write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
