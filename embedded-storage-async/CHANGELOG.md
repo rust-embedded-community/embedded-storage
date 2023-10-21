@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 - Let `&mut` `NorFlash` implement `NorFlash`.
+- Use now stabilized `async_fn_in_trait` and `impl_trait_projections`.
 
 ## [0.4.0] - 2022-12-01
 
