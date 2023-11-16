@@ -1,75 +1,9 @@
-use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
-
-/// NOR flash errors.
-///
-/// NOR flash implementations must use an error type implementing this trait. This permits generic
-/// code to extract a generic error kind.
-pub trait NorFlashError: core::fmt::Debug {
-	/// Convert a specific NOR flash error into a generic error kind.
-	fn kind(&self) -> NorFlashErrorKind;
-}
-
-impl NorFlashError for core::convert::Infallible {
-	fn kind(&self) -> NorFlashErrorKind {
-		match *self {}
-	}
-}
-
-/// A trait that NorFlash implementations can use to share an error type.
-pub trait ErrorType {
-	/// Errors returned by this NOR flash.
-	type Error: NorFlashError;
-}
-
-/// NOR flash error kinds.
-///
-/// NOR flash implementations must map their error to those generic error kinds through the
-/// [`NorFlashError`] trait.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[non_exhaustive]
-pub enum NorFlashErrorKind {
-	/// The arguments are not properly aligned.
-	NotAligned,
-
-	/// The arguments are out of bounds.
-	OutOfBounds,
-
-	/// Error specific to the implementation.
-	Other,
-}
-
-impl NorFlashError for NorFlashErrorKind {
-	fn kind(&self) -> NorFlashErrorKind {
-		*self
-	}
-}
-
-impl core::fmt::Display for NorFlashErrorKind {
-	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-		match self {
-			Self::NotAligned => write!(f, "Arguments are not properly aligned"),
-			Self::OutOfBounds => write!(f, "Arguments are out of bounds"),
-			Self::Other => write!(f, "An implementation specific error occurred"),
-		}
-	}
-}
+use crate::{iter::IterableByOverlaps, ErrorKind, ReadStorage, Region, Storage};
 
 /// Read only NOR flash trait.
-pub trait ReadNorFlash: ErrorType {
+pub trait ReadNorFlash: ReadStorage {
 	/// The minumum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
-
-	/// Read a slice of data from the storage peripheral, starting the read
-	/// operation at the given address offset, and reading `bytes.len()` bytes.
-	///
-	/// # Errors
-	///
-	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
-	/// can use the [`check_read`] helper function.
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
-
-	/// The capacity of the peripheral in bytes.
-	fn capacity(&self) -> usize;
 }
 
 /// Return whether a read operation is within bounds.
@@ -77,12 +11,12 @@ pub fn check_read<T: ReadNorFlash>(
 	flash: &T,
 	offset: u32,
 	length: usize,
-) -> Result<(), NorFlashErrorKind> {
+) -> Result<(), super::ErrorKind> {
 	check_slice(flash, T::READ_SIZE, offset, length)
 }
 
 /// NOR flash trait.
-pub trait NorFlash: ReadNorFlash {
+pub trait NorFlash: ReadNorFlash + Storage {
 	/// The minumum number of bytes the storage peripheral can write
 	const WRITE_SIZE: usize;
 
@@ -100,36 +34,22 @@ pub trait NorFlash: ReadNorFlash {
 	/// from` is considered out of bounds). The implementation can use the [`check_erase`]
 	/// helper function.
 	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error>;
-
-	/// If power is lost during write, the contents of the written words are undefined,
-	/// but the rest of the page is guaranteed to be unchanged.
-	/// It is not allowed to write to the same word twice.
-	///
-	/// # Errors
-	///
-	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
-	/// can use the [`check_write`] helper function.
-	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
 }
 
 /// Return whether an erase operation is aligned and within bounds.
-pub fn check_erase<T: NorFlash>(flash: &T, from: u32, to: u32) -> Result<(), NorFlashErrorKind> {
+pub fn check_erase<T: NorFlash>(flash: &T, from: u32, to: u32) -> Result<(), ErrorKind> {
 	let (from, to) = (from as usize, to as usize);
 	if from > to || to > flash.capacity() {
-		return Err(NorFlashErrorKind::OutOfBounds);
+		return Err(ErrorKind::OutOfBounds);
 	}
 	if from % T::ERASE_SIZE != 0 || to % T::ERASE_SIZE != 0 {
-		return Err(NorFlashErrorKind::NotAligned);
+		return Err(ErrorKind::NotAligned);
 	}
 	Ok(())
 }
 
 /// Return whether a write operation is aligned and within bounds.
-pub fn check_write<T: NorFlash>(
-	flash: &T,
-	offset: u32,
-	length: usize,
-) -> Result<(), NorFlashErrorKind> {
+pub fn check_write<T: NorFlash>(flash: &T, offset: u32, length: usize) -> Result<(), ErrorKind> {
 	check_slice(flash, T::WRITE_SIZE, offset, length)
 }
 
@@ -138,31 +58,19 @@ fn check_slice<T: ReadNorFlash>(
 	align: usize,
 	offset: u32,
 	length: usize,
-) -> Result<(), NorFlashErrorKind> {
+) -> Result<(), ErrorKind> {
 	let offset = offset as usize;
 	if length > flash.capacity() || offset > flash.capacity() - length {
-		return Err(NorFlashErrorKind::OutOfBounds);
+		return Err(ErrorKind::OutOfBounds);
 	}
 	if offset % align != 0 || length % align != 0 {
-		return Err(NorFlashErrorKind::NotAligned);
+		return Err(ErrorKind::NotAligned);
 	}
 	Ok(())
 }
 
-impl<T: ErrorType> ErrorType for &mut T {
-	type Error = T::Error;
-}
-
 impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 	const READ_SIZE: usize = T::READ_SIZE;
-
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-		T::read(self, offset, bytes)
-	}
-
-	fn capacity(&self) -> usize {
-		T::capacity(self)
-	}
 }
 
 impl<T: NorFlash> NorFlash for &mut T {
@@ -171,10 +79,6 @@ impl<T: NorFlash> NorFlash for &mut T {
 
 	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
 		T::erase(self, from, to)
-	}
-
-	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-		T::write(self, offset, bytes)
 	}
 }
 

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 - Let `&mut` `NorFlash` implement `NorFlash`.
+- Added `&mut` blanket implementations for `ReadStorage` and `Storage`
+- [breaking] Refactored `NorFlash` traits to use `Storage` base traits.
+- [breaking] Error kinds added to the base repository
 
 ## [0.3.0] - 2022-02-07
 
