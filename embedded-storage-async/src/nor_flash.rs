@@ -73,3 +73,15 @@ impl<T: NorFlash> NorFlash for &mut T {
 		T::write(self, offset, bytes).await
 	}
 }
+
+/// Marker trait for NorFlash relaxing the restrictions on `write`.
+///
+/// Writes to the same word twice are now allowed. The result is the logical AND of the
+/// previous data and the written data. That is, it is only possible to change 1 bits to 0 bits.
+///
+/// If power is lost during write:
+/// - Bits that were 1 on flash and are written to 1 are guaranteed to stay as 1
+/// - Bits that were 1 on flash and are written to 0 are undefined
+/// - Bits that were 0 on flash are guaranteed to stay as 0
+/// - Rest of the bits in the page are guaranteed to be unchanged
+pub trait MultiwriteNorFlash: NorFlash {}
