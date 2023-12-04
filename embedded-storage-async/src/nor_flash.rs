@@ -1,4 +1,4 @@
-use embedded_storage::nor_flash::ErrorType;
+pub use embedded_storage::nor_flash::{ErrorType, NorFlashError, NorFlashErrorKind};
 
 /// Read only NOR flash trait.
 pub trait ReadNorFlash: ErrorType {
