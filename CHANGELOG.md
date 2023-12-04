@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+No unreleased changes yet
+
+## [0.3.1] - 2023-12-04
+
 - Let `&mut` `NorFlash` implement `NorFlash`.
 
 ## [0.3.0] - 2022-02-07
@@ -25,6 +29,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 Initial release to crates.io.
 
-[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.3.1
+[0.3.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.3.0
 [0.2.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.2.0
 [0.1.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/v0.1.0
