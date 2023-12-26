@@ -1,4 +1,4 @@
-use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
+use crate::{ReadStorage, Storage};
 
 /// NOR flash errors.
 ///
@@ -34,6 +34,9 @@ pub enum NorFlashErrorKind {
 	/// The arguments are out of bounds.
 	OutOfBounds,
 
+	/// The cell already was written or cannot be written properly with provided value
+	DirtyWrite,
+
 	/// Error specific to the implementation.
 	Other,
 }
@@ -49,6 +52,7 @@ impl core::fmt::Display for NorFlashErrorKind {
 		match self {
 			Self::NotAligned => write!(f, "Arguments are not properly aligned"),
 			Self::OutOfBounds => write!(f, "Arguments are out of bounds"),
+			Self::DirtyWrite => write!(f, "Dirty write operation"),
 			Self::Other => write!(f, "An implementation specific error occurred"),
 		}
 	}
@@ -57,6 +61,8 @@ impl core::fmt::Display for NorFlashErrorKind {
 /// Read only NOR flash trait.
 pub trait ReadNorFlash: ErrorType {
 	/// The minumum number of bytes the storage peripheral can read
+	///
+	/// **NOTE** Must be power of two
 	const READ_SIZE: usize;
 
 	/// Read a slice of data from the storage peripheral, starting the read
@@ -84,10 +90,19 @@ pub fn check_read<T: ReadNorFlash>(
 /// NOR flash trait.
 pub trait NorFlash: ReadNorFlash {
 	/// The minumum number of bytes the storage peripheral can write
+	///
+	/// **NOTE** Must be power of two
 	const WRITE_SIZE: usize;
 
 	/// The minumum number of bytes the storage peripheral can erase
+	///
+	/// **NOTE** Must be power of two
 	const ERASE_SIZE: usize;
+
+	/// The content of erased storage
+	///
+	/// Usually is `0xff` for NOR flash
+	const ERASE_BYTE: u8 = 0xff;
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
 	/// The given range will contain all 1s afterwards.
@@ -168,6 +183,7 @@ impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 impl<T: NorFlash> NorFlash for &mut T {
 	const WRITE_SIZE: usize = T::WRITE_SIZE;
 	const ERASE_SIZE: usize = T::ERASE_SIZE;
+	const ERASE_BYTE: u8 = T::ERASE_BYTE;
 
 	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
 		T::erase(self, from, to)
@@ -189,32 +205,6 @@ impl<T: NorFlash> NorFlash for &mut T {
 /// - Bits that were 0 on flash are guaranteed to stay as 0
 /// - Rest of the bits in the page are guaranteed to be unchanged
 pub trait MultiwriteNorFlash: NorFlash {}
-
-struct Page {
-	pub start: u32,
-	pub size: usize,
-}
-
-impl Page {
-	fn new(index: u32, size: usize) -> Self {
-		Self {
-			start: index * size as u32,
-			size,
-		}
-	}
-
-	/// The end address of the page
-	const fn end(&self) -> u32 {
-		self.start + self.size as u32
-	}
-}
-
-impl Region for Page {
-	/// Checks if an address offset is contained within the page
-	fn contains(&self, address: u32) -> bool {
-		(self.start <= address) && (self.end() > address)
-	}
-}
 
 ///
 pub struct RmwNorFlashStorage<'a, S> {
@@ -242,6 +232,136 @@ where
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NotAlignedStart {
+	byte_offset: usize,
+	byte_length: usize,
+	offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AlignedMiddle {
+	offset: usize,
+	length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NotAlignedEnd {
+	byte_length: usize,
+	offset: usize,
+}
+
+fn plan_op(
+	align: usize,
+	offset: usize,
+	length: usize,
+) -> (
+	Option<NotAlignedStart>,
+	Option<AlignedMiddle>,
+	Option<NotAlignedEnd>,
+) {
+	// calc local not aligned offset
+	let byte_offset = offset % align;
+
+	let (offset, length, start) = if byte_offset > 0 {
+		// calc aligned offset
+		let offset = offset - byte_offset;
+		// calc local length
+		let byte_length = length.min(align - byte_offset);
+		(
+			// calc next aligned offset
+			offset + align,
+			// calc next length
+			length - byte_length,
+			if byte_length > 0 {
+				Some(NotAlignedStart {
+					byte_offset,
+					byte_length,
+					offset,
+				})
+			} else {
+				None
+			},
+		)
+	} else {
+		(offset, length, None)
+	};
+
+	if length == 0 {
+		return (start, None, None);
+	}
+
+	// calc end not aligned length
+	let byte_length = length % align;
+	// calc aligned length
+	let length = length - byte_length;
+
+	let middle = if length > 0 {
+		Some(AlignedMiddle { offset, length })
+	} else {
+		None
+	};
+
+	let end = if byte_length > 0 {
+		let offset = offset + length;
+		Some(NotAlignedEnd {
+			byte_length,
+			offset,
+		})
+	} else {
+		None
+	};
+
+	(start, middle, end)
+}
+
+fn not_aligned_read<S: ReadNorFlash>(
+	storage: &mut S,
+	buffer: &mut [u8],
+	offset: usize,
+	mut bytes: &mut [u8],
+) -> Result<(), S::Error> {
+	let (start, middle, end) = plan_op(S::READ_SIZE, offset, bytes.len());
+
+	if let Some(NotAlignedStart {
+		byte_offset,
+		byte_length,
+		offset,
+	}) = start
+	{
+		// Do aligned read to merge buffer
+		storage.read(offset as u32, &mut buffer[..S::READ_SIZE])?;
+
+		// Copy unaligned chunk to data buffer
+		bytes[..byte_length].copy_from_slice(&buffer[byte_offset..][..byte_length]);
+
+		// Update slice
+		bytes = &mut bytes[byte_length..];
+	}
+
+	if let Some(AlignedMiddle { offset, length }) = middle {
+		// Do aligned read directly to bytes
+		storage.read(offset as u32, &mut bytes[..length])?;
+
+		// Update slice
+		bytes = &mut bytes[length..];
+	}
+
+	if let Some(NotAlignedEnd {
+		byte_length,
+		offset,
+	}) = end
+	{
+		// Do aligned read to merge buffer
+		storage.read(offset as u32, &mut buffer[..S::READ_SIZE])?;
+
+		// Copy aligned chunk to data buffer
+		bytes[..byte_length].copy_from_slice(&buffer[..byte_length]);
+	}
+
+	Ok(())
+}
+
 impl<'a, S> ReadStorage for RmwNorFlashStorage<'a, S>
 where
 	S: ReadNorFlash,
@@ -249,8 +369,7 @@ where
 	type Error = S::Error;
 
 	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-		// Nothing special to be done for reads
-		self.storage.read(offset, bytes)
+		not_aligned_read(&mut self.storage, self.merge_buffer, offset as usize, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -258,36 +377,149 @@ where
 	}
 }
 
+#[inline]
+fn re_align(align: usize, offset: usize, length: usize) -> (usize, usize) {
+	let byte_offset = offset % align;
+	let length = length + byte_offset;
+	let byte_length = length % align;
+	(
+		offset - byte_offset,
+		if byte_length > 0 {
+			length + align - byte_length
+		} else {
+			length
+		},
+	)
+}
+
+fn not_aligned_write<S: NorFlash>(
+	storage: &mut S,
+	buffer: &mut [u8],
+	offset: usize,
+	mut bytes: &[u8],
+	check: impl Fn(&[u8], &[u8]) -> (bool, bool),
+) -> Result<(), S::Error> {
+	let (start, middle, end) = plan_op(S::ERASE_SIZE, offset, bytes.len());
+
+	if let Some(NotAlignedStart {
+		byte_offset,
+		byte_length,
+		offset,
+	}) = start
+	{
+		// Do aligned read to merge buffer
+		storage.read(offset as u32, &mut buffer[..S::ERASE_SIZE])?;
+
+		let (need_erase, need_write) =
+			check(&buffer[byte_offset..][..byte_length], &bytes[..byte_length]);
+
+		if need_erase {
+			// erase page
+			storage.erase(offset as u32, (offset + S::ERASE_SIZE) as u32)?;
+		}
+
+		if need_write {
+			// Copy unaligned data chunk to merge buffer
+			buffer[byte_offset..][..byte_length].copy_from_slice(&bytes[..byte_length]);
+
+			if need_erase {
+				// write entire page
+				storage.write(offset as u32, &buffer[..S::ERASE_SIZE])?;
+			} else {
+				// write modified data only
+				let (word_offset, word_length) = re_align(S::WRITE_SIZE, byte_offset, byte_length);
+
+				storage.write(
+					(offset + word_offset) as u32,
+					&buffer[word_offset..][..word_length],
+				)?;
+			}
+		}
+
+		// Update slice
+		bytes = &bytes[byte_length..];
+	}
+
+	if let Some(AlignedMiddle { offset, length }) = middle {
+		for offset in (offset..offset + length).step_by(S::ERASE_SIZE) {
+			// Do aligned read to merge buffer
+			storage.read(offset as u32, &mut buffer[..S::ERASE_SIZE])?;
+
+			let (need_erase, need_write) = check(&buffer[..S::ERASE_SIZE], &bytes[..S::ERASE_SIZE]);
+
+			if need_erase {
+				// erase page
+				storage.erase(offset as u32, (offset + S::ERASE_SIZE) as u32)?;
+			}
+
+			if need_write {
+				// Copy unaligned data chunk to merge buffer
+				buffer[..S::ERASE_SIZE].copy_from_slice(&bytes[..S::ERASE_SIZE]);
+
+				// write entire page
+				storage.write(offset as u32, &buffer[..S::ERASE_SIZE])?;
+			}
+
+			// Update slice
+			bytes = &bytes[S::ERASE_SIZE..];
+		}
+	}
+
+	if let Some(NotAlignedEnd {
+		byte_length,
+		offset,
+	}) = end
+	{
+		// Do aligned read to merge buffer
+		storage.read(offset as u32, &mut buffer[..S::ERASE_SIZE])?;
+
+		let (need_erase, need_write) = check(&buffer[..byte_length], &bytes[..byte_length]);
+
+		if need_erase {
+			// erase page
+			storage.erase(offset as u32, (offset + S::ERASE_SIZE) as u32)?;
+		}
+
+		if need_write {
+			// Copy not aligned data chunk to merge buffer
+			buffer[..byte_length].copy_from_slice(&bytes[..byte_length]);
+
+			if need_erase {
+				// write entire page
+				storage.write(offset as u32, &buffer[..S::ERASE_SIZE])?;
+			} else {
+				// write modified data only
+				let (_, word_length) = re_align(S::WRITE_SIZE, 0, byte_length);
+
+				storage.write(offset as u32, &buffer[..word_length])?;
+			}
+		}
+	}
+
+	Ok(())
+}
+
 impl<'a, S> Storage for RmwNorFlashStorage<'a, S>
 where
 	S: NorFlash,
 {
 	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-		// Perform read/modify/write operations on the byte slice.
-		let last_page = self.storage.capacity() / S::ERASE_SIZE;
+		fn check<S: NorFlash>(old: &[u8], new: &[u8]) -> (bool, bool) {
+			//let need_write = old.iter().zip(new.iter()).all(|(old, new)| *old & *new == *new);
+			let modified = old != new;
+			let need_erase = modified && old.iter().any(|old_byte| *old_byte != S::ERASE_BYTE);
+			let need_write = modified && new.iter().any(|new_byte| *new_byte != S::ERASE_BYTE);
 
-		// `data` is the part of `bytes` contained within `page`,
-		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
-		for (data, page, addr) in (0..last_page as u32)
-			.map(move |i| Page::new(i, S::ERASE_SIZE))
-			.overlaps(bytes, offset)
-		{
-			let offset_into_page = addr.saturating_sub(page.start) as usize;
-
-			self.storage
-				.read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
-
-			// If we cannot write multiple times to the same page, we will have to erase it
-			self.storage.erase(page.start, page.end())?;
-			self.merge_buffer[..S::ERASE_SIZE]
-				.iter_mut()
-				.skip(offset_into_page)
-				.zip(data)
-				.for_each(|(byte, input)| *byte = *input);
-			self.storage
-				.write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+			(need_erase, need_write)
 		}
-		Ok(())
+
+		not_aligned_write(
+			&mut self.storage,
+			self.merge_buffer,
+			offset as usize,
+			bytes,
+			check::<S>,
+		)
 	}
 }
 
@@ -324,8 +556,7 @@ where
 	type Error = S::Error;
 
 	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-		// Nothing special to be done for reads
-		self.storage.read(offset, bytes)
+		not_aligned_read(&mut self.storage, self.merge_buffer, offset as usize, bytes)
 	}
 
 	fn capacity(&self) -> usize {
@@ -338,44 +569,642 @@ where
 	S: MultiwriteNorFlash,
 {
 	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-		// Perform read/modify/write operations on the byte slice.
-		let last_page = self.storage.capacity() / S::ERASE_SIZE;
+		fn check<S: NorFlash>(old: &[u8], new: &[u8]) -> (bool, bool) {
+			let modified = old != new;
+			let need_erase = modified && old.iter().any(|old_byte| *old_byte != S::ERASE_BYTE);
+			let need_write = modified
+				&& new
+					.iter()
+					.zip(old.iter())
+					.any(|(new_byte, old_byte)| *old_byte & *new_byte != *new_byte);
+			(need_erase, need_write)
+		}
 
-		// `data` is the part of `bytes` contained within `page`,
-		// and `addr` in the address offset of `page` + any offset into the page as requested by `address`
-		for (data, page, addr) in (0..last_page as u32)
-			.map(move |i| Page::new(i, S::ERASE_SIZE))
-			.overlaps(bytes, offset)
-		{
-			let offset_into_page = addr.saturating_sub(page.start) as usize;
+		not_aligned_write(
+			&mut self.storage,
+			self.merge_buffer,
+			offset as usize,
+			bytes,
+			check::<S>,
+		)
+	}
+}
 
-			self.storage
-				.read(page.start, &mut self.merge_buffer[..S::ERASE_SIZE])?;
+/// A wrapper for NOR flash storage to collect usage statistics
+#[derive(Clone, Copy, Debug)]
+pub struct NorFlashStats<S> {
+	storage: S,
+	/// Number of read operations
+	pub reads: usize,
+	/// Amount read chunks
+	pub read: usize,
+	/// Number of write operations
+	pub writes: usize,
+	/// Amount written chunks
+	pub written: usize,
+	/// Number of erase operations
+	pub erases: usize,
+	/// Amount of erased sectors
+	pub erased: usize,
+}
 
-			let rhs = &self.merge_buffer[offset_into_page..S::ERASE_SIZE];
-			let is_subset = data.iter().zip(rhs.iter()).all(|(a, b)| *a & *b == *a);
+impl<S> From<S> for NorFlashStats<S> {
+	fn from(storage: S) -> Self {
+		Self {
+			storage,
+			reads: 0,
+			read: 0,
+			writes: 0,
+			written: 0,
+			erases: 0,
+			erased: 0,
+		}
+	}
+}
 
-			// Check if we can write the data block directly, under the limitations imposed by NorFlash:
-			// - We can only change 1's to 0's
-			if is_subset {
-				// Use `merge_buffer` as allocation for padding `data` to `WRITE_SIZE`
-				let offset = addr as usize % S::WRITE_SIZE;
-				let aligned_end = data.len() % S::WRITE_SIZE + offset + data.len();
-				self.merge_buffer[..aligned_end].fill(0xff);
-				self.merge_buffer[offset..offset + data.len()].copy_from_slice(data);
-				self.storage
-					.write(addr - offset as u32, &self.merge_buffer[..aligned_end])?;
-			} else {
-				self.storage.erase(page.start, page.end())?;
-				self.merge_buffer[..S::ERASE_SIZE]
-					.iter_mut()
-					.skip(offset_into_page)
-					.zip(data)
-					.for_each(|(byte, input)| *byte = *input);
-				self.storage
-					.write(page.start, &self.merge_buffer[..S::ERASE_SIZE])?;
+impl<S> NorFlashStats<S> {
+	/// Unwrap to get wrapped storage instance
+	pub fn into_inner(self) -> S {
+		self.storage
+	}
+}
+
+impl<S> core::ops::Deref for NorFlashStats<S> {
+	type Target = S;
+
+	fn deref(&self) -> &Self::Target {
+		&self.storage
+	}
+}
+
+impl<S> core::ops::DerefMut for NorFlashStats<S> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.storage
+	}
+}
+
+impl<S: ErrorType> ErrorType for NorFlashStats<S> {
+	type Error = S::Error;
+}
+
+impl<S: ReadNorFlash> ReadNorFlash for NorFlashStats<S> {
+	const READ_SIZE: usize = S::READ_SIZE;
+
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), S::Error> {
+		let res = self.storage.read(offset, bytes);
+		if res.is_ok() {
+			self.reads += 1;
+			self.read += bytes.len() / S::READ_SIZE;
+		}
+		res
+	}
+
+	fn capacity(&self) -> usize {
+		self.storage.capacity()
+	}
+}
+
+impl<S: NorFlash> NorFlash for NorFlashStats<S> {
+	const WRITE_SIZE: usize = S::WRITE_SIZE;
+	const ERASE_SIZE: usize = S::ERASE_SIZE;
+	const ERASE_BYTE: u8 = S::ERASE_BYTE;
+
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), S::Error> {
+		let res = self.storage.write(offset, bytes);
+		if res.is_ok() {
+			self.writes += 1;
+			self.written += bytes.len() / S::WRITE_SIZE;
+		}
+		res
+	}
+
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), S::Error> {
+		let res = self.storage.erase(from, to);
+		if res.is_ok() {
+			self.erases += 1;
+			self.erased += (to - from) as usize / S::ERASE_SIZE;
+		}
+		res
+	}
+}
+
+/// Simple RAM-backed flash storage implementation for tests
+#[derive(Clone, Copy, Debug)]
+pub struct MockFlash<
+	const CAPACITY: usize,
+	const READ_SIZE: usize = 1,
+	const WRITE_SIZE: usize = 1,
+	const ERASE_SIZE: usize = { 1 << 10 },
+	const ERASE_BYTE: u8 = 0xff,
+	const MULTI_WRITE: bool = false,
+> {
+	data: [u8; CAPACITY],
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> Default for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	fn default() -> Self {
+		Self {
+			data: [ERASE_BYTE; CAPACITY],
+		}
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> core::ops::Deref
+	for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	type Target = [u8; CAPACITY];
+
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> core::ops::DerefMut
+	for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.data
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> ErrorType for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	type Error = NorFlashErrorKind;
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> ReadNorFlash for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	const READ_SIZE: usize = READ_SIZE;
+
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+		check_read(self, offset, bytes.len())?;
+		bytes.copy_from_slice(&self.data[offset as usize..][..bytes.len()]);
+		Ok(())
+	}
+
+	fn capacity(&self) -> usize {
+		CAPACITY
+	}
+}
+
+impl<
+		const CAPACITY: usize,
+		const READ_SIZE: usize,
+		const WRITE_SIZE: usize,
+		const ERASE_SIZE: usize,
+		const ERASE_BYTE: u8,
+		const MULTI_WRITE: bool,
+	> NorFlash for MockFlash<CAPACITY, READ_SIZE, WRITE_SIZE, ERASE_SIZE, ERASE_BYTE, MULTI_WRITE>
+{
+	const WRITE_SIZE: usize = WRITE_SIZE;
+	const ERASE_SIZE: usize = ERASE_SIZE;
+	const ERASE_BYTE: u8 = ERASE_BYTE;
+
+	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+		check_write(self, offset, bytes.len())?;
+		for (dst, src) in self.data[offset as usize..].iter_mut().zip(bytes) {
+			if !MULTI_WRITE && *dst != ERASE_BYTE {
+				return Err(NorFlashErrorKind::DirtyWrite);
+			}
+			*dst &= *src;
+			if *src != *dst {
+				return Err(NorFlashErrorKind::DirtyWrite);
 			}
 		}
 		Ok(())
+	}
+
+	fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+		check_erase(self, from, to)?;
+		self.data[from as usize..to as usize].fill(ERASE_BYTE);
+		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	const TEST_SIZE: usize = 64;
+	const TEST_WORD: usize = 4;
+	const TEST_PAGE: usize = 16;
+	type TestFlash = MockFlash<TEST_SIZE, TEST_WORD, TEST_WORD, TEST_PAGE>;
+
+	const fn gen_test_data<const N: usize>() -> [u8; N] {
+		let mut data = [0u8; N];
+		let mut i = 0;
+
+		while i < N {
+			data[i] = i as u8;
+			i += 1;
+		}
+
+		data
+	}
+
+	const TEST_DATA: [u8; 64] = gen_test_data();
+
+	fn gen_ranges(aligned: Option<bool>) -> impl Iterator<Item = (usize, usize)> {
+		(0..TEST_SIZE).flat_map(move |off| {
+			(0..=TEST_SIZE - off)
+				.filter(move |len| {
+					aligned
+						.map(|aligned| aligned == (off % TEST_WORD == 0 && len % TEST_WORD == 0))
+						.unwrap_or(true)
+				})
+				.map(move |len| (off, len))
+		})
+	}
+
+	#[test]
+	fn aligned_test_ranges() {
+		let mut ranges = gen_ranges(true.into());
+
+		assert_eq!(ranges.next(), Some((0, 0)));
+		assert_eq!(ranges.next(), Some((0, 4)));
+		assert_eq!(ranges.next(), Some((0, 8)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((0, 64)));
+		assert_eq!(ranges.next(), Some((4, 0)));
+		assert_eq!(ranges.next(), Some((4, 4)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((4, 60)));
+		assert_eq!(ranges.next(), Some((8, 0)));
+		for _ in 0..13 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((8, 56)));
+		assert_eq!(ranges.next(), Some((12, 0)));
+		for _ in 0..12 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((12, 52)));
+		assert_eq!(ranges.next(), Some((16, 0)));
+		for _ in 0..11 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((16, 48)));
+		assert_eq!(ranges.next(), Some((20, 0)));
+	}
+
+	#[test]
+	fn not_aligned_test_ranges() {
+		let mut ranges = gen_ranges(false.into());
+
+		assert_eq!(ranges.next(), Some((0, 1)));
+		assert_eq!(ranges.next(), Some((0, 2)));
+		assert_eq!(ranges.next(), Some((0, 3)));
+		assert_eq!(ranges.next(), Some((0, 5)));
+		for _ in 0..43 {
+			ranges.next();
+		}
+		assert_eq!(ranges.next(), Some((0, 63)));
+		assert_eq!(ranges.next(), Some((1, 0)));
+	}
+
+	#[test]
+	fn re_align_util() {
+		assert_eq!(re_align(TEST_WORD, 0, 0), (0, 0));
+		assert_eq!(re_align(TEST_WORD, 1, 0), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 1, 1), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 1, 3), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 1, 4), (0, 8));
+		assert_eq!(re_align(TEST_WORD, 2, 2), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 2, 3), (0, 8));
+		assert_eq!(re_align(TEST_WORD, 3, 0), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 3, 1), (0, 4));
+		assert_eq!(re_align(TEST_WORD, 3, 2), (0, 8));
+		assert_eq!(re_align(TEST_WORD, 3, 5), (0, 8));
+		assert_eq!(re_align(TEST_WORD, 3, 6), (0, 12));
+	}
+
+	#[test]
+	fn plan_op_util() {
+		assert_eq!(plan_op(TEST_WORD, 0, 0), (None, None, None));
+		assert_eq!(plan_op(TEST_WORD, 1, 0), (None, None, None));
+		assert_eq!(
+			plan_op(TEST_WORD, 0, 1),
+			(
+				None,
+				None,
+				Some(NotAlignedEnd {
+					byte_length: 1,
+					offset: 0
+				})
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 4, 1),
+			(
+				None,
+				None,
+				Some(NotAlignedEnd {
+					byte_length: 1,
+					offset: 4
+				})
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 0, 3),
+			(
+				None,
+				None,
+				Some(NotAlignedEnd {
+					byte_length: 3,
+					offset: 0
+				})
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 4, 3),
+			(
+				None,
+				None,
+				Some(NotAlignedEnd {
+					byte_length: 3,
+					offset: 4
+				})
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 1, 1),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 1,
+					offset: 0
+				}),
+				None,
+				None
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 5, 1),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 1,
+					offset: 4
+				}),
+				None,
+				None
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 1, 3),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 3,
+					offset: 0
+				}),
+				None,
+				None
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 5, 3),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 3,
+					offset: 4
+				}),
+				None,
+				None
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 0, 4),
+			(
+				None,
+				Some(AlignedMiddle {
+					offset: 0,
+					length: 4,
+				}),
+				None,
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 4, 8),
+			(
+				None,
+				Some(AlignedMiddle {
+					offset: 4,
+					length: 8,
+				}),
+				None,
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 1, 7),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 3,
+					offset: 0,
+				}),
+				Some(AlignedMiddle {
+					offset: 4,
+					length: 4,
+				}),
+				None,
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 1, 5),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 1,
+					byte_length: 3,
+					offset: 0,
+				}),
+				None,
+				Some(NotAlignedEnd {
+					byte_length: 2,
+					offset: 4,
+				}),
+			)
+		);
+		assert_eq!(
+			plan_op(TEST_WORD, 2, 11),
+			(
+				Some(NotAlignedStart {
+					byte_offset: 2,
+					byte_length: 2,
+					offset: 0,
+				}),
+				Some(AlignedMiddle {
+					offset: 4,
+					length: 8,
+				}),
+				Some(NotAlignedEnd {
+					byte_length: 1,
+					offset: 12,
+				}),
+			)
+		);
+	}
+
+	#[test]
+	fn aligned_read_raw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_read_raw() {
+		let mut flash = TestFlash::default();
+		let mut buffer = [0; TEST_SIZE];
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(
+				flash.read(off as u32, &mut buffer[..len]),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn aligned_read_rmw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		let mut flash_buffer = [0; TEST_PAGE];
+		let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_read_rmw() {
+		let mut flash = TestFlash::default();
+		flash[..TEST_DATA.len()].copy_from_slice(&TEST_DATA);
+		let mut buffer = [0; TEST_SIZE];
+
+		let mut flash_buffer = [0; TEST_PAGE];
+		let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(flash.read(off as u32, &mut buffer[..len]), Ok(()));
+			assert_eq!(buffer[..len], TEST_DATA[off..][..len]);
+		}
+	}
+
+	#[test]
+	fn aligned_write_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in gen_ranges(true.into()) {
+			assert_eq!(flash.erase(0, TEST_SIZE as u32), Ok(()));
+			assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_write_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in gen_ranges(false.into()) {
+			assert_eq!(
+				flash.write(off as u32, &TEST_DATA[..len]),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn not_aligned_erase_raw() {
+		let mut flash = TestFlash::default();
+
+		for (off, len) in [
+			(1usize, TEST_PAGE),
+			(0, TEST_PAGE - 1),
+			(TEST_PAGE, TEST_PAGE + 1),
+		] {
+			assert_eq!(
+				flash.erase(off as u32, (off + len) as u32),
+				Err(NorFlashErrorKind::NotAligned)
+			);
+		}
+	}
+
+	#[test]
+	fn aligned_write_rmw() {
+		let mut flash = TestFlash::default();
+		let mut flash_buffer = [0u8; TEST_PAGE];
+
+		for (off, len) in gen_ranges(true.into()) {
+			{
+				let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+				assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			}
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
+	}
+
+	#[test]
+	fn not_aligned_write_rmw() {
+		let mut flash = TestFlash::default();
+		let mut flash_buffer = [0u8; TEST_PAGE];
+
+		for (off, len) in gen_ranges(false.into()) {
+			{
+				let mut flash = RmwNorFlashStorage::new(&mut flash, &mut flash_buffer);
+				assert_eq!(flash.write(off as u32, &TEST_DATA[..len]), Ok(()));
+			}
+			assert_eq!(flash[off..][..len], TEST_DATA[..len]);
+		}
 	}
 }
