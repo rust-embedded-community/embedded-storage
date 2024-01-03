@@ -11,6 +11,11 @@
 /// Currently contains [`OverlapIterator`]
 pub mod iter;
 /// Technology specific traits for NOR Flashes
+///
+/// These traits are suitable for NOR flash backed memory, but given the wide range of flash
+/// technologies, not all NOR flashes may implement all those traits, nor <!-- no pun intended -->
+/// will every instance necessarily be backed by NOR flash. The documentation of the individual
+/// traits and their members define the precise criteria for the applicability of the trait.
 pub mod nor_flash;
 
 /// A region denotes a contiguous piece of memory between two addresses.
