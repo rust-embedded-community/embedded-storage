@@ -15,8 +15,16 @@ pub mod nor_flash;
 
 /// A region denotes a contiguous piece of memory between two addresses.
 pub trait Region {
+	/// Start address of the region of `Self`
+	fn start(&self) -> u32;
+
+	/// End address of the region of `Self`
+	fn end(&self) -> u32;
+
 	/// Check if `address` is contained in the region of `Self`
-	fn contains(&self, address: u32) -> bool;
+	fn contains(&self, address: u32) -> bool {
+		(address >= self.start()) && (address < self.end())
+	}
 }
 
 /// Transparent read only storage trait

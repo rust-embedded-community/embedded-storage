@@ -202,17 +202,15 @@ impl Page {
 			size,
 		}
 	}
-
-	/// The end address of the page
-	const fn end(&self) -> u32 {
-		self.start + self.size as u32
-	}
 }
 
 impl Region for Page {
-	/// Checks if an address offset is contained within the page
-	fn contains(&self, address: u32) -> bool {
-		(self.start <= address) && (self.end() > address)
+	fn start(&self) -> u32 {
+		self.start
+	}
+
+	fn end(&self) -> u32 {
+		self.start + self.size as u32
 	}
 }
 

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
-No unreleased changes yet
+- Add `start()` and `end()` method to the `Region` trait.
 
 ## [0.3.1] - 2023-12-04
 
