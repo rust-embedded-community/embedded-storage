@@ -30,18 +30,15 @@ where
 	type Item = (&'a [u8], R, u32);
 
 	fn next(&mut self) -> Option<Self::Item> {
+		let mem_start = self.base_address;
+		let mem_end = self.base_address + self.memory.len() as u32;
 		while let Some(region) = self.regions.next() {
-			//  TODO: This might be possible to do in a smarter way?
-			let mut block_range = (0..self.memory.len())
-				.skip_while(|index| !region.contains(self.base_address + *index as u32))
-				.take_while(|index| region.contains(self.base_address + *index as u32));
-			if let Some(start) = block_range.next() {
-				let end = block_range.last().unwrap_or(start) + 1;
-				return Some((
-					&self.memory[start..end],
-					region,
-					self.base_address + start as u32,
-				));
+			if mem_start < region.end() && mem_end >= region.start() {
+				let addr_start = core::cmp::max(mem_start, region.start());
+				let addr_end = core::cmp::min(mem_end, region.end());
+				let start = (addr_start - self.base_address) as usize;
+				let end = (addr_end - self.base_address) as usize;
+				return Some((&self.memory[start..end], region, addr_start));
 			}
 		}
 		None
