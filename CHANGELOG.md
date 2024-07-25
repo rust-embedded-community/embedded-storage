@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Add `start()` and `end()` method to the `Region` trait.
 - Much faster `OverlapIterator`.
+- Add optional `defmt` attribute for `NorFlashErrorKind` gated by a new feature `defmt-03`.
 
 ## [0.3.1] - 2023-12-04
 
