@@ -26,6 +26,7 @@ pub trait ErrorType {
 /// NOR flash implementations must map their error to those generic error kinds through the
 /// [`NorFlashError`] trait.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 #[non_exhaustive]
 pub enum NorFlashErrorKind {
 	/// The arguments are not properly aligned.
