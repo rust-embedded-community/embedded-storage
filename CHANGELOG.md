@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+- Add `WordclearNorFlash` to encode relaxed `write` requirements similar to `MultiwriteNorFlash` but that allows for flashes with ECC.
 - Add `start()` and `end()` method to the `Region` trait.
 - Much faster `OverlapIterator`.
 

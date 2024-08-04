@@ -180,6 +180,15 @@ impl<T: NorFlash> NorFlash for &mut T {
 
 /// Marker trait for NorFlash relaxing the restrictions on `write`.
 ///
+/// Writes to the same word twice are now allowed as long as the second write is all 0s.
+/// This is common for flashes that have ECC, where after the first write only a complete clear of
+/// the word is allowed after initial write.
+pub trait WordclearNorFlash: NorFlash {}
+
+impl<T> WordclearNorFlash for T where T: MultiwriteNorFlash {}
+
+/// Marker trait for NorFlash relaxing the restrictions on `write`.
+///
 /// Writes to the same word twice are now allowed. The result is the logical AND of the
 /// previous data and the written data. That is, it is only possible to change 1 bits to 0 bits.
 ///
