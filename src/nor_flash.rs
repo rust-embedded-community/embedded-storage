@@ -214,7 +214,25 @@ impl Region for Page {
 	}
 }
 
-///
+/// Returns the greatest multiple of `multiplier` that is less than or equal to `value`.
+const fn round_down(value: u32, multiplier: u32) -> u32 {
+	if multiplier == 0 {
+		value
+	} else {
+		value - value % multiplier
+	}
+}
+
+/// Returns the smallest multiple of `multiplier` that is greater than or equal to `value`.
+const fn round_up(value: u32, multiplier: u32) -> u32 {
+	if multiplier == 0 {
+		value
+	} else {
+		round_down(value + multiplier - 1, multiplier)
+	}
+}
+
+/// An instance of [`Storage`], that performs read-modify-write operations when trying to [`write`](Storage::write).
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -246,9 +264,80 @@ where
 {
 	type Error = S::Error;
 
+	// Note: read requests may be unaligned, so extra work is needed to turn these into aligned requests.
+	// This implementations emits up to three aligned reads, and will only do one read if `offset` and `bytes` are `READ_SIZE`-aligned.
 	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
-		// Nothing special to be done for reads
-		self.storage.read(offset, bytes)
+		// Bypass if reads don't need to be aligned.
+		if S::READ_SIZE == 1 {
+			return self.storage.read(offset, bytes);
+		}
+
+		let length = bytes.len() as u32;
+		if length == 0 {
+			return Ok(());
+		}
+
+		// There are two cases to consider: a generic case, and a special case.
+		//
+		// Generic case: all three sections may be empty, but never overlap.
+		// We emit a `read()` for each non-empty section.
+		// |--------|--------|--------|
+		//   [header|main....|footer]
+		// |--------|--------|--------|
+		//
+		// Special case: no READ_SIZE boundary is crossed, so header and footer overlap,
+		// and the main section has negative length.
+		// In this case, the only `read()` needed is done in the header part,
+		// and we then exit early.
+		// |--------|--------|--------|
+		//            [all]
+		// |--------|--------|--------|
+
+		let header_start = round_down(offset, S::READ_SIZE as u32);
+		let header_end = round_up(offset, S::READ_SIZE as u32);
+
+		let footer_start = round_down(offset + length, S::READ_SIZE as u32);
+		let footer_length = offset + length - footer_start;
+
+		if header_start != header_end {
+			// Read the "header" part of the bytes into `self.merge_buffers`. The generic and the special case may run
+			// this code.
+			let header_length = (header_end - offset).min(length);
+			let tmp_buffer = &mut self.merge_buffer[0..S::READ_SIZE as usize];
+
+			self.storage.read(header_start as u32, tmp_buffer)?;
+
+			// The offset to start to copy bytes from `tmp_buffer` to `bytes`.
+			let tmp_buffer_offset = offset - header_start;
+			bytes[0..header_length as usize].copy_from_slice(
+				&tmp_buffer[tmp_buffer_offset as usize..(tmp_buffer_offset + header_length) as usize],
+			);
+		}
+
+		if header_end > footer_start {
+			// Special case: the headers and footers overlap, so we exit now (since all the work is already done).
+			return Ok(());
+		}
+
+		if header_end != footer_start {
+			// Read the main part of the bytes, at once. In most scenarios,
+			// this is where the quasi-totality of the read will be performed.
+			self.storage.read(
+				header_end as u32,
+				&mut bytes[((header_end - offset) as usize)..((footer_start - offset) as usize)],
+			)?;
+		}
+
+		if footer_length != 0 {
+			// Read the "footer" part of the bytes.
+			let tmp_buffer = &mut self.merge_buffer[0..S::READ_SIZE as usize];
+
+			self.storage.read(footer_start as u32, tmp_buffer)?;
+			bytes[(footer_start - offset) as usize..]
+				.copy_from_slice(&tmp_buffer[0..footer_length as usize]);
+		}
+
+		Ok(())
 	}
 
 	fn capacity(&self) -> usize {
@@ -375,5 +464,73 @@ where
 			}
 		}
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod test {
+	extern crate std;
+	use super::*;
+
+	/// A fake storage driver, that requires reads to be aligned to 4 bytes, and which will fill all of them with 0xFF
+	struct StrictReadAlign;
+
+	impl ErrorType for StrictReadAlign {
+		type Error = NorFlashErrorKind;
+	}
+
+	impl ReadNorFlash for StrictReadAlign {
+		const READ_SIZE: usize = 4;
+
+		fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+			let offset = offset as usize;
+
+			if offset % Self::READ_SIZE != 0 || bytes.len() % Self::READ_SIZE != 0 {
+				Err(NorFlashErrorKind::NotAligned)
+			} else {
+				for (byte_offset, byte) in bytes.iter_mut().enumerate() {
+					*byte = byte_offset as u8 + offset as u8;
+				}
+				Ok(())
+			}
+		}
+
+		fn capacity(&self) -> usize {
+			8
+		}
+	}
+
+	// Only required for RmwNorFlashStorage::new
+	impl NorFlash for StrictReadAlign {
+		const WRITE_SIZE: usize = 4;
+		const ERASE_SIZE: usize = 4;
+
+		fn erase(&mut self, _from: u32, _to: u32) -> Result<(), Self::Error> { unreachable!() }
+		fn write(&mut self, _offset: u32, _bytes: &[u8]) -> Result<(), Self::Error> { unreachable!() }
+	}
+
+	#[test]
+	fn test_read_unaligned() {
+		let mut buffer = [0x00; 4];
+		let mut storage = RmwNorFlashStorage::new(StrictReadAlign, &mut buffer);
+
+		let mut my_buffer = [0x00; 1];
+		storage.read(3, &mut my_buffer).unwrap();
+		assert_eq!(my_buffer[0], 0x03);
+	}
+
+	/// Check that `RmwNorFlashStorage::read` correctly reads memory.
+	#[test]
+	fn test_rmwstorage_read() {
+		for start in 0..4 {
+			for end in start..4 {
+				let mut buffer = [0x00; 4];
+				let mut storage = RmwNorFlashStorage::new(StrictReadAlign, &mut buffer);
+
+				let mut my_buffer = std::vec![0x00; end - start];
+				storage.read(start as u32, &mut my_buffer).unwrap();
+				assert!(my_buffer.iter().enumerate().all(|(i, &x)| x == i as u8 + start as u8));
+			}
+		}
 	}
 }
