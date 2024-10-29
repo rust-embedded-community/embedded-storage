@@ -33,6 +33,7 @@ pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
 
 /// The linear numeric address of a block (or sector).
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BlockIdx(pub u64);
 
 impl BlockIdx {
@@ -80,6 +81,7 @@ impl SubAssign<BlockCount> for BlockIdx {
 ///
 /// This may be added to a [`BlockIdx`] to get another `BlockIdx`.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BlockCount(pub u64);
 
 impl Add<BlockCount> for BlockCount {
