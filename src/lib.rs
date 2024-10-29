@@ -62,7 +62,7 @@ pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
 	type Error;
 
 	/// Returns the size of the device in blocks.
-	fn block_count(&self) -> Result<usize, Self::Error>;
+	fn block_count(&self) -> Result<u64, Self::Error>;
 
 	/// Reads some number of blocks from the device, starting at `first_block_index`.
 	///
