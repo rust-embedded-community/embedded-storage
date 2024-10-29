@@ -8,6 +8,8 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+/// Types and traits for block devices.
+pub mod block;
 /// Currently contains [`OverlapIterator`]
 pub mod iter;
 /// Technology specific traits for NOR Flashes
@@ -52,35 +54,4 @@ pub trait Storage: ReadStorage {
 	/// This function will automatically erase any pages necessary to write the given data,
 	/// and might as such do RMW operations at an undesirable performance impact.
 	fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
-}
-
-/// A device which can read and write whole numbers of blocks.
-///
-/// Blocks are also referred to as sectors in some contexts.
-pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
-	/// The error type returned by methods on this trait.
-	type Error;
-
-	/// Returns the size of the device in blocks.
-	fn block_count(&self) -> Result<u64, Self::Error>;
-
-	/// Reads some number of blocks from the device, starting at `first_block_index`.
-	///
-	/// `first_block_index + blocks.len()` must not be greater than the size returned by
-	/// `block_count`.
-	fn read(
-		&mut self,
-		first_block_index: u64,
-		blocks: &mut [[u8; BLOCK_SIZE]],
-	) -> Result<(), Self::Error>;
-
-	/// Writes some number of blocks to the device, starting at `first_block_index`.
-	///
-	/// `first_block_index + blocks.len()` must not be greater than the size returned by
-	/// `block_count`.
-	fn write(
-		&mut self,
-		first_block_index: u64,
-		blocks: &[[u8; BLOCK_SIZE]],
-	) -> Result<(), Self::Error>;
 }
