@@ -16,8 +16,8 @@ pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
 	/// `block_count`.
 	fn read(
 		&mut self,
-		first_block_index: BlockIdx,
 		blocks: &mut [[u8; BLOCK_SIZE]],
+		first_block_index: BlockIdx,
 	) -> Result<(), Self::Error>;
 
 	/// Writes some number of blocks to the device, starting at `first_block_index`.
@@ -26,8 +26,8 @@ pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
 	/// `block_count`.
 	fn write(
 		&mut self,
-		first_block_index: BlockIdx,
 		blocks: &[[u8; BLOCK_SIZE]],
+		first_block_index: BlockIdx,
 	) -> Result<(), Self::Error>;
 }
 
