@@ -34,10 +34,8 @@ pub trait ReadStorage {
 
 	/// Read a slice of data from the storage peripheral, starting the read
 	/// operation at the given address offset, and reading `bytes.len()` bytes.
-	///
-	/// This should throw an error in case `bytes.len()` will be larger than
-	/// `self.capacity() - offset`.
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	/// This should return how many bytes were read into the `bytes` slice allowing for sub-slices that are exclusively read information, or an error
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<usize, Self::Error>;
 
 	/// The capacity of the storage peripheral in bytes.
 	fn capacity(&self) -> usize;

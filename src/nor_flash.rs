@@ -66,7 +66,7 @@ pub trait ReadNorFlash: ErrorType {
 	///
 	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
 	/// can use the [`check_read`] helper function.
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<usize, Self::Error>;
 
 	/// The capacity of the peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -156,7 +156,7 @@ impl<T: ErrorType> ErrorType for &mut T {
 impl<T: ReadNorFlash> ReadNorFlash for &mut T {
 	const READ_SIZE: usize = T::READ_SIZE;
 
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<usize, Self::Error> {
 		T::read(self, offset, bytes)
 	}
 
@@ -214,7 +214,7 @@ impl Region for Page {
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) storage struct for NOR flash memory. If the NOR flash memory has support for multiple writes to the same memory location use [`RmwMultiwriteNorFlashStorage`](RmwMultiwriteNorFlashStorage). `RmwNorFlashStorage` always needs to erase the page before writing, where as [`RmwMultiwriteNorFlashStorage`](RmwMultiwriteNorFlashStorage) only needs to erase in accordance with the rules specified in the [`MultiwriteNorFlash`](MultiwriteNorFlash) trait.
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -240,13 +240,13 @@ where
 	}
 }
 
-impl<'a, S> ReadStorage for RmwNorFlashStorage<'a, S>
+impl<S> ReadStorage for RmwNorFlashStorage<'_, S>
 where
 	S: ReadNorFlash,
 {
 	type Error = S::Error;
 
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<usize, Self::Error> {
 		// Nothing special to be done for reads
 		self.storage.read(offset, bytes)
 	}
@@ -256,7 +256,7 @@ where
 	}
 }
 
-impl<'a, S> Storage for RmwNorFlashStorage<'a, S>
+impl<S> Storage for RmwNorFlashStorage<'_, S>
 where
 	S: NorFlash,
 {
@@ -289,7 +289,7 @@ where
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) storage struct for NOR flash memory that supports multiple writes to the same memory location without necessarily erasing. Rules governing this are specified in the [`MultiwriteNorFlash`](MultiwriteNorFlash) trait.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -315,13 +315,13 @@ where
 	}
 }
 
-impl<'a, S> ReadStorage for RmwMultiwriteNorFlashStorage<'a, S>
+impl<S> ReadStorage for RmwMultiwriteNorFlashStorage<'_, S>
 where
 	S: ReadNorFlash,
 {
 	type Error = S::Error;
 
-	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<usize, Self::Error> {
 		// Nothing special to be done for reads
 		self.storage.read(offset, bytes)
 	}
@@ -331,7 +331,7 @@ where
 	}
 }
 
-impl<'a, S> Storage for RmwMultiwriteNorFlashStorage<'a, S>
+impl<S> Storage for RmwMultiwriteNorFlashStorage<'_, S>
 where
 	S: MultiwriteNorFlash,
 {
