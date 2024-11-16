@@ -56,7 +56,7 @@ impl core::fmt::Display for NorFlashErrorKind {
 
 /// Read only NOR flash trait.
 pub trait ReadNorFlash: ErrorType {
-	/// The minumum number of bytes the storage peripheral can read
+	/// The minimum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
 
 	/// Read a slice of data from the storage peripheral, starting the read
@@ -101,10 +101,10 @@ pub fn check_read<T: ReadNorFlash>(
 
 /// NOR flash trait.
 pub trait NorFlash: ReadNorFlash {
-	/// The minumum number of bytes the storage peripheral can write
+	/// The minimum number of bytes the storage peripheral can write
 	const WRITE_SIZE: usize;
 
-	/// The minumum number of bytes the storage peripheral can erase
+	/// The minimum number of bytes the storage peripheral can erase
 	const ERASE_SIZE: usize;
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
