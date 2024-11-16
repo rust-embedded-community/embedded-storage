@@ -56,7 +56,7 @@ impl core::fmt::Display for NorFlashErrorKind {
 
 /// Read only NOR flash trait.
 pub trait ReadNorFlash: ErrorType {
-	/// The minumum number of bytes the storage peripheral can read
+	/// The minimum number of bytes the storage peripheral can read
 	const READ_SIZE: usize;
 
 	/// Read a slice of data from the storage peripheral, starting the read
@@ -67,6 +67,24 @@ pub trait ReadNorFlash: ErrorType {
 	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
 	/// can use the [`check_read`] helper function.
 	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
+
+	/// Read a slice of data from the storage peripheral, starting the read
+	/// operation at the given address offset, and reading `bytes.len()` bytes.
+	///
+	/// The function returns `Ok(true)` if the data is considered to be non-empty.
+	/// The value of `bytes` should not be considered reliable if the function returns `Ok(false)`.
+	///
+	/// This function is useful for devices that offer transparent flash encryption,
+	/// and for devices where the erased byte value is not `0xFF`.
+	///
+	/// # Errors
+	///
+	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
+	/// can use the [`check_read`] helper function.
+	fn read_if_not_empty(&mut self, offset: u32, bytes: &mut [u8]) -> Result<bool, Self::Error> {
+		self.read(offset, bytes)?;
+		Ok(!bytes.iter().all(|&b| b == 0xFF))
+	}
 
 	/// The capacity of the peripheral in bytes.
 	fn capacity(&self) -> usize;
@@ -83,10 +101,10 @@ pub fn check_read<T: ReadNorFlash>(
 
 /// NOR flash trait.
 pub trait NorFlash: ReadNorFlash {
-	/// The minumum number of bytes the storage peripheral can write
+	/// The minimum number of bytes the storage peripheral can write
 	const WRITE_SIZE: usize;
 
-	/// The minumum number of bytes the storage peripheral can erase
+	/// The minimum number of bytes the storage peripheral can erase
 	const ERASE_SIZE: usize;
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
