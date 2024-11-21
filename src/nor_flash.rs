@@ -64,11 +64,13 @@ pub trait ReadNorFlash: ErrorType {
 	///
 	/// # Errors
 	///
-	/// Returns an error if the arguments are not aligned or out of bounds. The implementation
-	/// can use the [`check_read`] helper function.
+	/// Returns an error if the arguments are not aligned, or if the range exceeds the bounds. The
+	/// implementation can use the [`check_read`] helper function.
 	fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the peripheral in bytes.
+	///
+	/// This must be a multiple of READ_SIZE.
 	fn capacity(&self) -> usize;
 }
 
@@ -83,10 +85,12 @@ pub fn check_read<T: ReadNorFlash>(
 
 /// NOR flash trait.
 pub trait NorFlash: ReadNorFlash {
-	/// The minumum number of bytes the storage peripheral can write
+	/// The number of bytes to which writes must be aligned, and of of which written lengths must
+	/// be a multiple of.
 	const WRITE_SIZE: usize;
 
-	/// The minumum number of bytes the storage peripheral can erase
+	/// The number of bytes to which erases must be aligned, and of of which erased lengths must be
+	/// a multiple of.
 	const ERASE_SIZE: usize;
 
 	/// Erase the given storage range, clearing all data within `[from..to]`.
@@ -103,7 +107,8 @@ pub trait NorFlash: ReadNorFlash {
 
 	/// If power is lost during write, the contents of the written words are undefined,
 	/// but the rest of the page is guaranteed to be unchanged.
-	/// It is not allowed to write to the same word twice.
+	/// It is not allowed to write to the same word twice unless another trait
+	/// ([MultiwriteNorFlash]) allows it.
 	///
 	/// # Errors
 	///
@@ -214,7 +219,11 @@ impl Region for Page {
 	}
 }
 
+/// An implementation of byte-addressed [Storage] based on [NorFlash]
 ///
+/// The provided storage is as large as the underlying flash memory, and thus no journaling is
+/// performed. If a write is interrupted, up to a page of data (a size that is not visible to
+/// consumers of the [Storage] trait) may be lost.
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -289,7 +298,9 @@ where
 	}
 }
 
+/// An implementation of byte-addressed [Storage] based on [MultiwriteNorFlash]
 ///
+/// Compared to [RmwNorFlashStorage], this may save erases.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
