@@ -7,26 +7,72 @@ pub trait BlockDevice<const BLOCK_SIZE: usize = 512> {
 	/// The error type returned by methods on this trait.
 	type Error;
 
+	/// How aligned do we need the blocks to be?
+	///
+	/// See the [`aligned`] crate for more details.
+	type Alignment: aligned::Alignment;
+
 	/// Returns the size of the device in blocks.
 	fn block_count(&self) -> Result<BlockCount, Self::Error>;
 
-	/// Reads some number of blocks from the device, starting at `first_block_index`.
+	/// Creates some stack allocated empty blocks, with suitable alignment.
+	fn empty_blocks<const N: usize>(
+		&self,
+	) -> [aligned::Aligned<Self::Alignment, [u8; BLOCK_SIZE]>; N] {
+		[aligned::Aligned([0u8; BLOCK_SIZE]); N]
+	}
+
+	/// Reads some blocks from the device, starting at `first_block_index`.
 	///
-	/// `first_block_index + blocks.len()` must not be greater than the size returned by
-	/// `block_count`.
+	/// The buffer we read into must be suitably aligned. You can create a
+	/// buffer like:
+	///
+	/// ```rust
+	/// # use embedded_storage::block::{BlockDevice, BlockIdx};
+	/// # fn example<T, const N: usize>(block_device: &mut T) -> Result<(), T::Error> where T: BlockDevice<N, Alignment = aligned::A4> {
+	///
+	/// let mut buffer = block_device.empty_blocks::<4>();
+	/// block_device.read(&mut buffer[..], BlockIdx(0))?;
+	///
+	/// # Ok(())
+	/// # }
+	/// ```
+	///
+	/// You will get an error if you request more blocks than the block device
+	/// has (i.e. if `first_block_index + blocks.len()` is greater than the size
+	/// returned by `block_count`).
 	fn read(
 		&mut self,
-		blocks: &mut [[u8; BLOCK_SIZE]],
+		blocks: &mut [aligned::Aligned<Self::Alignment, [u8; BLOCK_SIZE]>],
 		first_block_index: BlockIdx,
 	) -> Result<(), Self::Error>;
 
-	/// Writes some number of blocks to the device, starting at `first_block_index`.
+	/// Writes some number of blocks to the device, starting at
+	/// `first_block_index`.
 	///
-	/// `first_block_index + blocks.len()` must not be greater than the size returned by
-	/// `block_count`.
+	/// The buffer we write out must be suitably aligned. You can create a
+	/// buffer like:
+	///
+	/// ```rust
+	/// # use embedded_storage::block::{BlockDevice, BlockIdx};
+	/// # fn example<T, const N: usize>(block_device: &mut T) -> Result<(), T::Error> where T: BlockDevice<N, Alignment = aligned::A4> {
+	///
+	/// let mut buffer = block_device.empty_blocks::<4>();
+	/// for block in buffer.iter_mut() {
+	///    block.fill(0xCC);
+	/// }
+	/// block_device.write(&buffer[..], BlockIdx(0))?;
+	///
+	/// # Ok(())
+	/// # }
+	/// ```
+	///
+	/// You will get an error if you request more blocks than the block device
+	/// has (i.e. if first_block_index + blocks.len() is greater than the size
+	/// returned by block_count).
 	fn write(
 		&mut self,
-		blocks: &[[u8; BLOCK_SIZE]],
+		blocks: &[aligned::Aligned<Self::Alignment, [u8; BLOCK_SIZE]>],
 		first_block_index: BlockIdx,
 	) -> Result<(), Self::Error>;
 }
@@ -132,12 +178,51 @@ impl BlockIter {
 impl Iterator for BlockIter {
 	type Item = BlockIdx;
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.current.0 >= self.inclusive_end.0 {
-			None
-		} else {
+		if self.current.0 <= self.inclusive_end.0 {
 			let this = self.current;
 			self.current += BlockCount(1);
 			Some(this)
+		} else {
+			None
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn block_idx_addition() {
+		let a = BlockIdx(100);
+		let len = BlockCount(50);
+		let b = a + len;
+		assert_eq!(b, BlockIdx(150));
+	}
+
+	#[test]
+	fn block_idx_subtraction() {
+		let a = BlockIdx(100);
+		let len = BlockCount(50);
+		let b = a - len;
+		assert_eq!(b, BlockIdx(50));
+	}
+
+	#[test]
+	fn block_iter() {
+		let mut block_iter = BlockIter::new(BlockIdx(10), BlockIdx(12));
+		let expected = [
+			Some(BlockIdx(10)),
+			Some(BlockIdx(11)),
+			Some(BlockIdx(12)),
+			None,
+		];
+		let actual = [
+			block_iter.next(),
+			block_iter.next(),
+			block_iter.next(),
+			block_iter.next(),
+		];
+		assert_eq!(actual, expected);
 	}
 }
