@@ -8,7 +8,7 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
-/// Currently contains [`OverlapIterator`]
+/// Currently contains [`OverlapIterator`](iter::OverlapIterator)
 pub mod iter;
 /// Technology specific traits for NOR Flashes
 pub mod nor_flash;
