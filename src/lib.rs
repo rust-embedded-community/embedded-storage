@@ -8,6 +8,8 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+/// Types and traits for block devices.
+pub mod block;
 /// Currently contains [`OverlapIterator`]
 pub mod iter;
 /// Technology specific traits for NOR Flashes
