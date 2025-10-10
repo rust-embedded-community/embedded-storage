@@ -13,3 +13,9 @@ documentation = "https://docs.rs/embedded-storage"
 readme = "README.md"
 keywords = ["storage"]
 categories = ["embedded", "hardware-support", "no-std"]
+
+[features]
+defmt = ["dep:defmt"]
+
+[dependencies]
+defmt = { version = "1.0.1", optional = true }
