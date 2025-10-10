@@ -19,7 +19,7 @@ where
 	I: Iterator<Item = R>,
 {
 	/// Obtain an [`OverlapIterator`] over a subslice of `memory` that overlaps with the region in `self`
-	fn overlaps(self, memory: &'a [u8], base_address: u32) -> OverlapIterator<R, I>;
+	fn overlaps(self, memory: &'a [u8], base_address: u32) -> OverlapIterator<'a, R, I>;
 }
 
 impl<'a, R, I> Iterator for OverlapIterator<'a, R, I>
@@ -54,7 +54,7 @@ where
 	R: Region,
 	I: Iterator<Item = R>,
 {
-	fn overlaps(self, memory: &'a [u8], base_address: u32) -> OverlapIterator<R, I> {
+	fn overlaps(self, memory: &'a [u8], base_address: u32) -> OverlapIterator<'a, R, I> {
 		OverlapIterator {
 			memory,
 			regions: self,
