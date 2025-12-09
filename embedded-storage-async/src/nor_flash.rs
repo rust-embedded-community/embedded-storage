@@ -89,6 +89,7 @@ impl<T: NorFlash> NorFlash for &mut T {
 /// - Bits that were 0 on flash are guaranteed to stay as 0
 /// - Rest of the bits in the page are guaranteed to be unchanged
 pub trait MultiwriteNorFlash: NorFlash {}
+impl<T: MultiwriteNorFlash> MultiwriteNorFlash for &mut T {}
 
 struct Page {
 	pub start: u32,
