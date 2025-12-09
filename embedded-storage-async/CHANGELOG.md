@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## Unreleased
 
 - Add RMW helpers for Nor flashes, implementing `Storage` trait.
+- Let `&mut` `MultiwriteNorFlash` implement `MultiwriteNorFlash`.
 
 ## [0.4.1] - 2023-11-28
 
