@@ -1,6 +1,6 @@
 [package]
 name = "embedded-storage-async"
-version = "0.4.2"
+version = "0.4.1"
 authors = [
     "Mathias Koch <mk@blackbird.online>",
     "Ulf Lilleengen <lulf@redhat.com>",
