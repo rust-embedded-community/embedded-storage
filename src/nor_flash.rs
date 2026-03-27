@@ -4,7 +4,7 @@ use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
 ///
 /// NOR flash implementations must use an error type implementing this trait. This permits generic
 /// code to extract a generic error kind.
-pub trait NorFlashError {
+pub trait NorFlashError: core::fmt::Debug {
 	/// Convert a specific NOR flash error into a generic error kind.
 	fn kind(&self) -> NorFlashErrorKind;
 }
