@@ -32,7 +32,7 @@ where
 	fn next(&mut self) -> Option<Self::Item> {
 		let mem_start = self.base_address;
 		let mem_end = self.base_address + self.memory.len() as u32;
-    for region in self.regions.by_ref() {
+		for region in self.regions.by_ref() {
 			if mem_start < region.end() && mem_end >= region.start() {
 				let addr_start = core::cmp::max(mem_start, region.start());
 				let addr_end = core::cmp::min(mem_end, region.end());
