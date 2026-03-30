@@ -144,7 +144,7 @@ fn check_slice<T: ReadNorFlash>(
 	if length > flash.capacity() || offset > flash.capacity() - length {
 		return Err(NorFlashErrorKind::OutOfBounds);
 	}
-	if offset % align != 0 || length % align != 0 {
+	if !offset.is_multiple_of(align) || !length.is_multiple_of(align) {
 		return Err(NorFlashErrorKind::NotAligned);
 	}
 	Ok(())
@@ -216,7 +216,7 @@ impl Region for Page {
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) Nor Flash storage structure.
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -291,7 +291,7 @@ where
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
