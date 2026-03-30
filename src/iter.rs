@@ -45,7 +45,7 @@ where
 	}
 }
 
-/// Blanket implementation for all types implementing [`Iterator`] over [`Regions`]
+/// Blanket implementation for all types implementing [`Iterator`] over [`Region`]
 impl<'a, R, I> IterableByOverlaps<'a, R, I> for I
 where
 	R: Region,
