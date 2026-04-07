@@ -19,7 +19,11 @@ pub trait ReadNorFlash: ErrorType {
 	async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error>;
 
 	/// The capacity of the peripheral in bytes.
-	fn capacity(&self) -> usize;
+	///
+	/// # Errors
+	///
+	/// Returns an error if the IO operation fails.
+	async fn capacity(&self) -> Result<usize, Self::Error>;
 }
 
 /// NOR flash trait.
