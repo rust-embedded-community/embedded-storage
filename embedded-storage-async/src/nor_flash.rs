@@ -1,5 +1,7 @@
 use embedded_storage::iter::IterableByOverlaps;
-pub use embedded_storage::nor_flash::{ErrorType, NorFlashError, NorFlashErrorKind};
+pub use embedded_storage::nor_flash::{
+	check_erase, check_read, check_write, ErrorType, NorFlashError, NorFlashErrorKind,
+};
 use embedded_storage::Region;
 
 use crate::{ReadStorage, Storage};
