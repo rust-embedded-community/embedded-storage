@@ -3,6 +3,7 @@
 //! Storage traits to allow on and off board storage devices to read and write
 //! data asynchronously.
 
+#![doc(html_root_url = "https://docs.rs/embedded-storage-async/0.4.1")]
 #![no_std]
 #![allow(async_fn_in_trait)]
 
