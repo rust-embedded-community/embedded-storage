@@ -240,6 +240,11 @@ where
 			merge_buffer,
 		}
 	}
+
+	/// Consume the generic `Storage` and return the underlying NorFlash peripheral
+	pub fn into_inner(self) -> S {
+		self.storage
+	}
 }
 
 impl<'a, S> ReadStorage for RmwNorFlashStorage<'a, S>
@@ -314,6 +319,11 @@ where
 			storage: nor_flash,
 			merge_buffer,
 		}
+	}
+
+	/// Consume the generic `Storage` and return the underlying NorFlash peripheral
+	pub fn into_inner(self) -> S {
+		self.storage
 	}
 }
 
