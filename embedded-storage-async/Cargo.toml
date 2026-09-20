@@ -1,6 +1,6 @@
 [package]
 name = "embedded-storage-async"
-version = "0.4.1"
+version = "0.4.2"
 authors = [
     "Mathias Koch <mk@blackbird.online>",
     "Ulf Lilleengen <lulf@redhat.com>",
@@ -19,4 +19,4 @@ keywords = ["storage"]
 categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
-embedded-storage = "0.3.1"
+embedded-storage = { version = "0.3.1" }

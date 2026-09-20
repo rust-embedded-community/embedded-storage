@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
-- Add RMW helpers for Nor flashes, implementing `Storage` trait.
+## [0.4.2] - 2026-09-20
+
+- Add async `ReadStorage` and `Storage` traits.
+- Add `RmwNorFlashStorage` and `RmwMultiwriteNorFlashStorage` helpers for Nor flashes, implementing `Storage` trait.
 - Let `&mut` `MultiwriteNorFlash` implement `MultiwriteNorFlash`.
+- Use stable Rust with MSRV 1.75.
 
 ## [0.4.1] - 2023-11-28
 
@@ -26,7 +30,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 Initial release to crates.io.
 
-[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/embedded-storage-async-v0.4.1...HEAD
+[Unreleased]: https://github.com/rust-embedded-community/embedded-storage/compare/embedded-storage-async-v0.4.2...HEAD
+[0.4.2]: https://github.com/rust-embedded-community/embedded-storage/compare/embedded-storage-async-v0.4.1...embedded-storage-async-v0.4.2
 [0.4.1]: https://github.com/rust-embedded-community/embedded-storage/compare/embedded-storage-async-v0.4.0...embedded-storage-async-v0.4.1
 [0.4.0]: https://github.com/rust-embedded-community/embedded-storage/compare/embedded-storage-async-v0.3.0...embedded-storage-async-v0.4.0
 [0.3.0]: https://github.com/rust-embedded-community/embedded-storage/releases/tag/embedded-storage-async-v0.3.0
