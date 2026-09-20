@@ -4,10 +4,6 @@
 
 This create defines a set of async traits variants of embedded-storage.
 
-## Minimum Supported Rust Version (MSRV)
-
-This crate is guaranteed to compile on stable Rust 1.75.0 and up.
-
 ## License
 
 Licensed under either of
