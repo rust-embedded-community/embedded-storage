@@ -1,18 +1,12 @@
-[package]
-name = "embedded-storage"
-version = "0.3.1"
-authors = [
-    "Mathias Koch <mk@blackbird.online>",
+[workspace]
+members = [
+    "embedded-storage",
+    "embedded-storage-async"
 ]
-edition = "2024"
-rust-version = "1.87"
-description = "A Storage Abstraction Layer for Embedded Systems"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/rust-embedded-community/embedded-storage"
-documentation = "https://docs.rs/embedded-storage"
-readme = "README.md"
-keywords = ["storage"]
-categories = ["embedded", "hardware-support", "no-std"]
+resolver = "3"
 
-[dependencies]
-defmt = { version = "1", optional = true }
+package.edition = "2024"
+package.rust-version = "1.87"
+package.description = "A Storage Abstraction Layer for Embedded Systems"
+package.license = "MIT OR Apache-2.0"
+package.repository = "https://github.com/rust-embedded-community/embedded-storage"
