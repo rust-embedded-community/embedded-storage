@@ -117,7 +117,7 @@ impl Region for Page {
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 #[derive(Debug)]
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
@@ -200,7 +200,7 @@ where
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
