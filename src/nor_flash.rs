@@ -1,4 +1,4 @@
-use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
+use crate::{ReadStorage, Region, Storage, iter::IterableByOverlaps};
 
 /// NOR flash errors.
 ///
@@ -144,7 +144,7 @@ fn check_slice<T: ReadNorFlash>(
 	if length > flash.capacity() || offset > flash.capacity() - length {
 		return Err(NorFlashErrorKind::OutOfBounds);
 	}
-	if offset % align != 0 || length % align != 0 {
+	if !offset.is_multiple_of(align) || !length.is_multiple_of(align) {
 		return Err(NorFlashErrorKind::NotAligned);
 	}
 	Ok(())
@@ -204,19 +204,21 @@ impl Page {
 			size,
 		}
 	}
-}
 
-impl Region for Page {
-	fn start(&self) -> u32 {
-		self.start
-	}
-
-	fn end(&self) -> u32 {
+	/// The end address of the page
+	const fn end(&self) -> u32 {
 		self.start + self.size as u32
 	}
 }
 
-///
+impl Region for Page {
+	/// Checks if an address offset is contained within the page
+	fn contains(&self, address: u32) -> bool {
+		(self.start <= address) && (self.end() > address)
+	}
+}
+
+/// Read-Modify-Write (RMW) Nor Flash storage structure.
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -239,6 +241,11 @@ where
 			storage: nor_flash,
 			merge_buffer,
 		}
+	}
+
+	/// Consume the generic `Storage` and return the underlying NorFlash peripheral
+	pub fn into_inner(self) -> S {
+		self.storage
 	}
 }
 
@@ -291,7 +298,7 @@ where
 	}
 }
 
-///
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
@@ -314,6 +321,11 @@ where
 			storage: nor_flash,
 			merge_buffer,
 		}
+	}
+
+	/// Consume the generic `Storage` and return the underlying NorFlash peripheral
+	pub fn into_inner(self) -> S {
+		self.storage
 	}
 }
 
