@@ -1,4 +1,4 @@
-use crate::{iter::IterableByOverlaps, ReadStorage, Region, Storage};
+use crate::{ReadStorage, Region, Storage, iter::IterableByOverlaps};
 
 /// NOR flash errors.
 ///
