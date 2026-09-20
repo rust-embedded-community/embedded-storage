@@ -1,6 +1,6 @@
+use embedded_storage::Region;
 use embedded_storage::iter::IterableByOverlaps;
 pub use embedded_storage::nor_flash::{ErrorType, NorFlashError, NorFlashErrorKind};
-use embedded_storage::Region;
 
 use crate::{ReadStorage, Storage};
 
@@ -30,10 +30,12 @@ pub trait NorFlash: ReadNorFlash {
 	/// The minumum number of bytes the storage peripheral can erase
 	const ERASE_SIZE: usize;
 
-	/// Erase the given storage range, clearing all data within `[from..to]`.
+	/// Erase the given storage range, clearing all data within `from..to`.
 	/// The given range will contain all 1s afterwards.
 	///
 	/// If power is lost during erase, contents of the page are undefined.
+	///
+	/// `to` is exclusive.
 	///
 	/// # Errors
 	///
@@ -117,8 +119,7 @@ impl Region for Page {
 	}
 }
 
-/// Adapter that adapts a [`NorFlash`] as a generic [`Storage`] by performing
-/// RMW operations.
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 #[derive(Debug)]
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
@@ -201,8 +202,7 @@ where
 	}
 }
 
-/// Adapter that adapts a [`MultiwriteNorFlash`] as a generic [`Storage`] by
-/// performing RMW operations, avoiding erases where possible.
+/// Read-Modify-Write (RMW) Multi-Write Nor Flash storage structure.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],

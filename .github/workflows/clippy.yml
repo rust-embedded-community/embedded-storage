@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [ staging, trying, master ]
+    branches: [master]
   pull_request:
 
 name: Clippy check
@@ -8,13 +8,11 @@ jobs:
   clippy_check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
           components: clippy
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo clippy -- -D warnings

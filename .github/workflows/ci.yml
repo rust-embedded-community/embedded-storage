@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [ staging, trying, master ]
+    branches: [master]
   pull_request:
 
 name: Continuous integration
@@ -10,31 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # All generated code should be running on stable now
-        rust: [stable]
+        # All generated code should be running on stable and msrv
+        rust: ["1.87", stable]
 
         # The default target we're compiling on and for
-        TARGET: [x86_64-unknown-linux-gnu, thumbv6m-none-eabi, thumbv7m-none-eabi]
-
-        include:
-          # Test MSRV
-          - rust: 1.87
-            TARGET: x86_64-unknown-linux-gnu
-
-          # Test nightly but don't fail
-          - rust: nightly
-            experimental: true
-            TARGET: x86_64-unknown-linux-gnu
+        TARGET: [x86_64-unknown-linux-gnu, thumbv6m-none-eabi]
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.TARGET }}
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --target=${{ matrix.TARGET }}
+          targets: ${{ matrix.TARGET }}
+      - run: cargo check --target ${{ matrix.TARGET }}
