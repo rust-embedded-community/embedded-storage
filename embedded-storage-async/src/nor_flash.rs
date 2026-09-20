@@ -117,7 +117,8 @@ impl Region for Page {
 	}
 }
 
-///
+/// Adapter that adapts a [`NorFlash`] as a generic [`Storage`] by performing
+/// RMW operations.
 #[derive(Debug)]
 pub struct RmwNorFlashStorage<'a, S> {
 	storage: S,
@@ -195,7 +196,8 @@ where
 	}
 }
 
-///
+/// Adapter that adapts a [`MultiwriteNorFlash`] as a generic [`Storage`] by
+/// performing RMW operations, avoiding erases where possible.
 pub struct RmwMultiwriteNorFlashStorage<'a, S> {
 	storage: S,
 	merge_buffer: &'a mut [u8],
